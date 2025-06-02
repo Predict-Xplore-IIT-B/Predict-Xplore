@@ -1,0 +1,31 @@
+.Page{
+    background-color: rgb(234,236,255);
+}
+
+.Download {
+    background-color: #6C63FF;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    display: inline-block;
+    margin-left:75%;
+    margin-top:1rem;
+}
+
+.Download:hover {
+    background-color: #574bff;
+}
+
+.cardHolder{
+    background-color: white;
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+    padding: 0.5rem;
+    width: 95%;
+    border-radius: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}

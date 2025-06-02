@@ -1,0 +1,10 @@
+Xplore/models_weights/*
+Xplore/model_images/*
+Xplore/reports/*
+.dockerignore
+Dockerfile
+.git
+.gitignore
+__pycache__/*
+*.sqlite3
+.env

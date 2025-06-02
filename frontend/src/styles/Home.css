@@ -1,0 +1,108 @@
+/* Global font setting for the entire page */
+/* @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap'); */
+
+* {
+    font-family: 'Poppins', sans-serif;
+  }
+  
+  /* Home container styling */
+  .home-container {
+    text-align: center;
+    padding: 2rem;
+    background-color: #f0f4ff;
+    position: relative;
+  }
+  
+  /* Title styling */
+  .title {
+    font-size: 2rem;
+    color: #333;
+    margin-bottom: 2rem;
+  }
+  
+  /* White background box */
+  .white-box-1 {
+    position: absolute;
+    background-color: white;
+    border-radius: 15px;
+    width: 96%;
+    height: 80%;
+    top: 15%;
+    left: 2%;
+    z-index: 1; /* Behind the model cards */
+  }
+  
+  /* Models container */
+  .models-container {
+    display: flex;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    position: relative; /* Above white boxes */
+    z-index: 2; /* On top of the white boxes */
+  }
+  
+  /* Individual model card styling */
+  .model-card {
+    background-color: white;
+    border-radius: 15px;
+    padding: 2rem;
+    width: 22%;
+    margin: 1rem;
+    box-sizing: border-box;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1); /* Shadow effect */
+  }
+  
+  /* Hover effect on model cards */
+  .model-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* Model title styling */
+  .model-title {
+    color: #6a0dad;
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Line between model title and date */
+  .model-line {
+    width: 200px;
+    height: 2px;
+    background-color: #6a0dad; /* Purple line */
+    margin: 0 auto 1rem auto;
+  }
+  
+  /* Model date styling */
+  .model-date {
+    font-size: 0.9rem;
+    background-color: #EAECFF; /* Date background */
+    color: #39407D; /* Date text color */
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    display: inline-block;
+    margin-bottom: 1rem;
+  }
+  
+  /* Model description styling */
+  .model-description {
+    font-size: 0.9rem;
+    color: #666;
+    text-align: justify;
+  }
+  
+  /* Responsive design for medium screens */
+  @media (max-width: 1200px) {
+    .model-card {
+      width: 45%;
+    }
+  }
+  
+  /* Responsive design for small screens */
+  @media (max-width: 768px) {
+    .model-card {
+      width: 100%;
+    }
+  }
+  

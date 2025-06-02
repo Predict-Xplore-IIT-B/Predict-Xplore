@@ -1,0 +1,48 @@
+
+.card-inner {
+    transition: transform 0.9s;
+}
+
+.card:hover .card-inner {
+    transform: rotateY(-180deg); 
+}
+
+.card-front,.card-back {
+    transition: visibility 0s 0.9s; 
+}
+
+.card-back {
+    transform: rotateY(-180deg); 
+    display: none; 
+}
+
+.card:hover .card-back {
+    display: block;
+    transition: visibility 0s; 
+}
+
+.card:hover .card-front {
+    display: none;
+    transition: visibility 0s 0.9s; 
+}
+
+.test_select_btn{
+    padding: 0.2em;
+    padding-left: 1.5em;
+    padding-right: 1.5em;
+    border-radius: 20px;
+
+}
+
+.selected{
+    background-color: #6966FF;
+    color: white;
+    padding-left: 2.3em;
+    padding-right: 2.3em;
+}
+
+.not_selected{
+    background-color: white;
+    border: 2px solid #6966FF;
+    color: #6966FF;
+}

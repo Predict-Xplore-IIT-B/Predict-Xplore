@@ -1,0 +1,27 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"  # Map localhost:5173 to React app port 5173 inside container
+    volumes:
+      - ./frontend:/app  # Correct volume mapping
+      - /app/node_modules  # Prevents node_modules from being overwritten
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    stdin_open: true
+    tty: true
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"  # Map localhost:8000 to Django server port
+    volumes:
+      - ./backend:/Xplore
+    environment:
+      - DEBUG=True # Set to False in Production
+    stdin_open: true
+    tty: true

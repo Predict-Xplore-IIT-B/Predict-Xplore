@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+    font-family: 'Grance Bold';
+    src: url('/src/assets/fonts/Objectivity-Bold/otf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+  }
+  
+  body {
+    font-family: 'objectivity-bold', sans-serif;
+  }
+  

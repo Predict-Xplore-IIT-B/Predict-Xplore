@@ -1,0 +1,53 @@
+
+.card{
+  background-color: white;
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  width: 90%;
+  margin: auto;
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.model-head{
+  display: flex;
+  justify-content: space-between;
+}
+
+.model-head span{
+  color: #39407D;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.model-head button{
+  background-color: #6C63FF;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.model-head button:hover{
+  background-color: #574bff;
+}
+
+.model-desc{
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+}
+
+.model-desc img{
+  padding: 1rem;
+}
+
+.model-desc span{
+  color: #2B2B2B;
+  font-size: 0.9rem;
+  padding: 1rem;
+}

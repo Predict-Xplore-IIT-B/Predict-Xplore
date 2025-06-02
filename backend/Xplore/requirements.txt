@@ -1,0 +1,17 @@
+Django
+djangorestframework
+python-dotenv
+torch
+torchvision
+pycocotools
+albumentations
+segmentation-models-pytorch==0.3.3
+numpy
+matplotlib
+Pillow
+django-cors-headers
+reportlab
+ultralytics
+gunicorn
+python-ldap
+# django-rest-knox

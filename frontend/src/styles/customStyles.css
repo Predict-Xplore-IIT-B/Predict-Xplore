@@ -1,0 +1,66 @@
+
+.custom-checkbox {
+    appearance: none;
+    background-color: #EAECFF;
+    border: 2px solid #6966FF;
+    border-radius: 50%; /* Makes the checkbox round */
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .custom-checkbox:hover {
+    background-color: #D1D1FF;
+  }
+  
+  .custom-checkbox:checked {
+    background-color: #6966FF;
+    border-color: #6966FF;
+  }
+  
+  .custom-checkbox:checked::before {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: bold;
+  }
+  
+  .custom-radio {
+    appearance: none;
+    background-color: #EAECFF;
+    border: 2px solid #6966FF;
+    border-radius: 50%; /* Keeps radio button circular */
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .custom-radio:hover {
+    background-color: #D1D1FF;
+  }
+  
+  .custom-radio:checked {
+    background-color: #6966FF;
+  }
+  
+  .custom-radio:checked::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    background-color: white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  
