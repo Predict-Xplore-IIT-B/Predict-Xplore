@@ -8,37 +8,36 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 function ModelProceed() {
-
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
   const user = useSelector((state) => state.user.users[state.user.users.length - 1]);
-  const selectedModels = useSelector((state) => state.models.modelArray.filter((model) => model.selected));
-  const toRunModels = useSelector((state) => state.models.modelArray.filter((model) => model.toRun));
+  const selectedModels = useSelector((state) =>
+    state.models.modelArray.filter((model) => model.selected)
+  );
+  const toRunModels = useSelector((state) =>
+    state.models.modelArray.filter((model) => model.toRun)
+  );
 
-  const [imageSrc, setImageSrc] = useState(null);
+  const [imageSrcs, setImageSrcs] = useState([]);
   const [imgUpload, setImgUpload] = useState(false);
   const [runInstance, setRunInstance] = useState(false);
 
   const allClasses = ["class 1", "class 2", "class 3", "class 4"];
-  const algorithms = ["Algorithm 1", "Algorithm 2", "Algorithm 3", "Algorithm 4",];
+  const algorithms = ["Algorithm 1", "Algorithm 2", "Algorithm 3", "Algorithm 4"];
 
-  // to toggle the model to run
   const toggleModel = (model) => {
     dispatch(toggleModelToRun(model.id));
   };
 
-  // to navigate back
   const goBack = () => {
     const route = user.role === "admin" ? "/admin/model-test" : "/model-test";
     navigate(route);
   };
 
-  // to upload test image
   const uploadTestImage = async (file) => {
     const formData = new FormData();
     formData.append("image", file);
-
     setImgUpload(true);
 
     try {
@@ -53,87 +52,88 @@ function ModelProceed() {
       }
     } catch (e) {
       toast.error("Error in uploading image", { autoClose: 2000 });
-    }
-    finally {
+    } finally {
       setImgUpload(false);
     }
   };
 
-  // to handle instance run
   const handleRunInstance = async () => {
-    const data = {
-      username: user.username,
-      models: [toRunModels[0]?.name],
-    };
-
     setRunInstance(true);
+    setImageSrcs([]);
 
-    try {
-      const response = await axios.post(
-        "http://127.0.0.1:8000/model/instance/predict",
-        data,
-        { headers: { "Content-Type": "application/json" }}
-      );
+    for (const model of toRunModels) {
+      const data = {
+        username: user.username,
+        models: [model.name],
+      };
 
-      if (response.status === 200) {
-        // toast.success("Instance run successfully", { autoClose: 2000 });
+      try {
+        const response = await axios.post(
+          "http://127.0.0.1:8000/model/instance/predict",
+          data,
+          { headers: { "Content-Type": "application/json" } }
+        );
 
-        try {
-          const imageResponse = await axios.get(
-            `http://127.0.0.1:8000/model/output/${data.username}/${data.models[0]}`,
-            { responseType: "blob" }
-          );
-          const imageURL = URL.createObjectURL(imageResponse.data);
-          setImageSrc(imageURL);
-        } catch (error) {
-          console.error("Error fetching image:", error);
+        if (response.status === 200) {
+          try {
+            const imageResponse = await axios.get(
+              `http://127.0.0.1:8000/model/output/${user.username}/${model.name}`,
+              { responseType: "blob" }
+            );
+            const imageURL = URL.createObjectURL(imageResponse.data);
+            setImageSrcs((prev) => [...prev, { name: model.name, url: imageURL }]);
+          } catch (error) {
+            console.error(`Error fetching image for model ${model.name}:`, error);
+          }
         }
+      } catch (error) {
+        console.error("Prediction error:", error);
+        toast.error(
+          error.response?.data?.error || `Failed for model: ${model.name}`,
+          { autoClose: 2000 }
+        );
       }
-    } catch (error) {
-      console.error("Error Details:", error.response || error.message);
-      toast.error(
-        error.response?.data?.error || "An error occurred while running the instance.",
-        { autoClose: 2000 }
-      );
     }
-    finally{
-      setRunInstance(false);
-    }
+
+    setRunInstance(false);
   };
 
-  // function to close the image view
   const closeImageView = () => {
-    setImageSrc(null);
+    setImageSrcs([]);
   };
 
   return (
     <div className="w-screen h-screen bg-[#EAECFF]">
       <AdminNavbar />
 
-      {/* Image Overlay */}
-      {imageSrc && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="relative">
-            {/* Close Button */}
+      {/* Image Overlay Gallery */}
+      {imageSrcs.length > 0 && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50">
+          <div className="relative bg-white p-6 rounded-xl max-h-[90vh] overflow-y-auto">
             <button
               onClick={closeImageView}
-              className="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-600 transition"
+              className="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full hover:bg-red-600"
             >
               ×
             </button>
-
-            {/* Display Image */}
-            <img
-              src={imageSrc}
-              alt="Inference Output"
-              className="w-[80%] h-[80%] object-contain"
-            />
+            <div className="flex space-x-6 overflow-x-auto max-w-[90vw] py-4 px-2">
+              {imageSrcs.map((img, index) => (
+                <div key={index} className="flex-shrink-0 flex flex-col items-center">
+                  <p className="mb-2 font-semibold text-center">{img.name}</p>
+                  <img
+                    src={img.url}
+                    alt={`Output for ${img.name}`}
+                    className="w-[300px] h-[300px] object-contain rounded shadow"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="flex w-[100%] justify-center items-center">
+      <div className="flex w-full justify-center items-center">
         <div className="bg-white w-[80%] h-[70vh] rounded-2xl mt-20">
           <div className="flex flex-col h-full justify-center">
             <div className="flex-grow space-x-6 flex mb-6 justify-between">
@@ -169,23 +169,21 @@ function ModelProceed() {
               <div className="w-2/3 flex">
                 <div className="w-1/2 flex flex-col justify-around items-center">
                   <SelectCheckbox options={allClasses} title="Select Class" />
-                  <label className={`${imgUpload ? "bg-gray-400" : "bg-[#6966FF]"} text-white py-2 px-4 rounded-full flex items-center justify-center w-[70%] mr- cursor-pointer`}>
+                  <label className={`${imgUpload ? "bg-gray-400" : "bg-[#6966FF]"} text-white py-2 px-4 rounded-full w-[70%] text-center cursor-pointer`}>
                     {imgUpload ? "Image Uploading ..." : "Upload Test Image"}
                     <input
-                      disabled={imgUpload}
                       type="file"
                       accept=".jpg,.jpeg,.png"
                       className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files[0];
-                        if (file) {
-                          uploadTestImage(file);
-                        }
+                      disabled={imgUpload}
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) uploadTestImage(file);
                       }}
                     />
                   </label>
                 </div>
-                <div className="flex flex-col w-1/2 justify-around items-center">
+                <div className="w-1/2 flex flex-col justify-around items-center">
                   <SelectCheckbox options={algorithms} title="Select XAI Algo" />
                   <button
                     className={`${runInstance ? "bg-gray-400" : "bg-[#6966FF]"} text-white py-2 px-4 rounded-full w-[70%]`}

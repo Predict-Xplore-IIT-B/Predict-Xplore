@@ -13,5 +13,6 @@ django-cors-headers
 reportlab
 ultralytics
 gunicorn
-python-ldap
+python_ldap-3.4.4-cp312-cp312-win_amd64.whl
+# python-ldap
 # django-rest-knox
