@@ -58,3 +58,70 @@ class UserAuthenticationTests(TestCase):
         response = self.client.post(self.logout_url)
         self.assertEqual(response.status_code, 200)
         self.assertIn('Successfully logged out', response.json()['message'])
+
+class AdminUserManagementTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.admin = User.objects.create(
+            username='adminuser',
+            email='admin@example.com',
+            phone_number='1111111111',
+            password='password123',
+            role='admin',
+            is_active=True,
+            is_staff=True
+        )
+        self.admin.set_password('password123')
+        self.admin.save()
+        self.user = User.objects.create(
+            username='normaluser',
+            email='normal@example.com',
+            phone_number='2222222222',
+            password='password123',
+            role='user',
+            is_active=True
+        )
+        self.user.set_password('password123')
+        self.user.save()
+        self.admin_url = reverse('admin-user-management') if 'admin-user-management' in [u.name for u in self.client.handler._urls.urlpatterns] else '/users/admin/users'
+
+    def test_admin_can_list_non_admin_users(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(self.admin_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any(u['username'] == 'normaluser' for u in response.json()))
+
+    def test_admin_can_create_non_admin_user(self):
+        self.client.force_login(self.admin)
+        data = {
+            'username': 'newuser',
+            'email': 'newuser@example.com',
+            'phone_number': '3333333333',
+            'password': 'password123'
+        }
+        response = self.client.post(self.admin_url, data)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(username='newuser').exists())
+
+    def test_admin_can_update_non_admin_user(self):
+        self.client.force_login(self.admin)
+        data = {
+            'id': self.user.id,
+            'phone_number': '9999999999'
+        }
+        response = self.client.put(self.admin_url, data, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.phone_number, '9999999999')
+
+    def test_admin_can_delete_non_admin_user(self):
+        self.client.force_login(self.admin)
+        data = {'id': self.user.id}
+        response = self.client.delete(self.admin_url, data, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(id=self.user.id).exists())
+
+    def test_non_admin_cannot_access_admin_api(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.admin_url)
+        self.assertEqual(response.status_code, 403)
