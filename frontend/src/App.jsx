@@ -12,7 +12,7 @@ import Register from './components/Register';
 import CreateModel from './admin/pages/CreateModel';
 import AdminModelTest from './admin/pages/AdminModelTest';
 import CreatePipeline from './admin/pages/CreatePipeline';
-import EditUser from './admin/pages/EditUser';
+import ManageUser from './admin/pages/ManageUser';
 import ModelProceed from './admin/pages/ModelProceed';
 import AdminDashboard from './admin/pages/AdminDashboard';
 import AdminReport from './admin/pages/AdminReport';
@@ -45,7 +45,7 @@ function App() {
           <Route path="/admin/create-pipeline" element={<CreatePipeline />} />  
           <Route path="/admin/reports" element={<AdminReport />} />
           
-          <Route path="/admin/edit-user" element={<EditUser />} />
+          <Route path="/admin/manage-user" element={<ManageUser />} />
           <Route path="/admin/model-proceed" element={<ModelProceed />} />
           <Route path="/admin/model-test" element={<AdminModelTest />} />
         </Routes>
