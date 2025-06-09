@@ -15,3 +15,5 @@ ultralytics
 gunicorn
 python_ldap-3.4.4-cp311-cp311-win_amd64.whl
 # django-rest-knox
+# python-ldap
+# django-rest-knox

@@ -165,7 +165,8 @@ class PredictView(APIView):
                         plt.savefig(image_stream, format='png')
                         image_stream.seek(0)
                         encoded_image = base64.b64encode(image_stream.getvalue()).decode('utf-8')
-                        request.session[f'{username}_{selected_models[i]}'] = encoded_image
+                        # request.session[f'{username}_{selected_models[i]}'] = encoded_image
+                        uploaded_image.encoded_image[f'{username}_{selected_models[i]}'] = encoded_image
 
                         generate_report(selected_models[i], image_stream, username)
 
