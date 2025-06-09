@@ -6,13 +6,14 @@ torchvision
 pycocotools
 albumentations
 segmentation-models-pytorch==0.3.3
-numpy
+numpy>=1.23.0
 matplotlib
 Pillow
 django-cors-headers
 reportlab
 ultralytics
 gunicorn
-python_ldap-3.4.4-cp312-cp312-win_amd64.whl
+python_ldap-3.4.4-cp311-cp311-win_amd64.whl
+# django-rest-knox
 # python-ldap
 # django-rest-knox
