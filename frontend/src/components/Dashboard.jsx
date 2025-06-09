@@ -24,10 +24,10 @@ const Dashboard = () => {
       </div>
 
       <div className="actions-container">
-        <Link to="/admin/edit-user">
+        <Link to="/admin/manage-user">
           <div className="action-box" >
-            <i className="icon">✏️</i>
-            <p>Edit Users</p>
+            <i className="icon">👤</i>
+            <p>Manage User</p>
           </div>
         </Link>
         <Link to="/admin/create-model">
@@ -54,4 +54,3 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
-
