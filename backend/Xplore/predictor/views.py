@@ -299,14 +299,8 @@ class FetchInferenceImage(APIView):
 
 class ReportDownloadView(APIView):
     def get(self, request, filename):
-
-        # fetching file from the file directory
-        report_path = os.path.join(settings.BASE_DIR,'reports')
+        report_path = os.path.join(settings.BASE_DIR, 'reports', f"{filename}.pdf")
 
         if os.path.exists(report_path):
-            response = FileResponse(open(report_path + f'\\{filename}.pdf', 'rb'))
-            response['Content-Type'] = 'application/pdf'
-            response['Content-Disposition'] = f'attachment; filename={filename}'
-            return response
-        else:
-            return Response({'error':'Report does not exist.'},status=status.HTTP_404_NOT_FOUND)
+            return FileResponse(open(report_path, 'rb'), content_type='application/pdf', filename=f'{filename}.pdf')
+        return Response({'error': 'Report does not exist.'}, status=status.HTTP_404_NOT_FOUND)

@@ -37,6 +37,7 @@ function ModelTest() {
 
     // to navigate to ModelTestRun or ModelTestSelection page
     const passdata = () => {
+        console.log("user",user);
         
         if (user.role != null){
             navigate("/admin/model-proceed"); // Navigate to the ModelTestRun page

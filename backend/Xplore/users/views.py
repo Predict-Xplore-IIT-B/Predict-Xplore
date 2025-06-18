@@ -266,8 +266,8 @@ class LoginView(APIView):
             if user and user.is_active:
                 # Generate a token for the authenticated user
                 token, created = Token.objects.get_or_create(user=user)
-                user.otp = send_otp(user.username, email, subject_login, body_login_otp)
-                # user.otp = 12345
+                # user.otp = send_otp(user.username, email, subject_login, body_login_otp)
+                user.otp = 12345
                 user.otp_expiry = timezone.now() + datetime.timedelta(minutes=OTP_DURATION)
                 user.save()
 
