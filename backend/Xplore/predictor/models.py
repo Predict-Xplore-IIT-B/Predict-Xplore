@@ -17,7 +17,7 @@ class Model(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, help_text="Admin who uploaded the model")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp of model creation")
     model_type = models.CharField(
-        max_length=50, choices=MODEL_TYPES, help_text="Type of the model (e.g., image segmentation, object detection)"
+        max_length=50, null=False, blank=False, choices=MODEL_TYPES, help_text="Type of the model (e.g., image segmentation, object detection)"
     )
     model_image = models.ImageField(upload_to='model_images/', help_text="Image of the model", null=True, blank=True)
     allowed_xai_models = models.JSONField(default=list, help_text="List of allowed XAI models for this model", null=True, blank=True)
