@@ -236,7 +236,7 @@ const ManageUser = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-lg w-[90%] lg:w-[70%] p-6 shadow-xl"
+            className="bg-white rounded-lg w-[90%] lg:w-[70%] max-h-[90vh] overflow-y-auto p-6 shadow-xl"
           >
             <h1 className="text-2xl font-bold text-center text-[#39407D] mb-6">
               {formData.id
