@@ -117,17 +117,21 @@ const ManageUser = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    const isCreating = !formData.id;
-    const payload = {
-      ...(formData.id && { id: formData.id }),
-      username: formData.username,
-      email: formData.email,
-      phone_number: formData.phone_number,
-      user_roles: formData.user_roles,
-      is_active: true,
-      ...(isCreating && { password: "12345" }),
-    };
+  e.preventDefault();
+  const isCreating = !formData.id;
+
+  console.log("Submitting payload:", formData); // 👈 Add this line
+
+  const payload = {
+    ...(formData.id && { id: formData.id }),
+    username: formData.username,
+    email: formData.email,
+    phone_number: formData.phone_number,
+    user_roles: formData.user_roles,
+    is_active: true,
+    ...(isCreating && { password: "12345" }),
+  };
+
 
     try {
       const method = isCreating ? "POST" : "PUT";

@@ -394,7 +394,7 @@ class AddUserRoles(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-class AdminUserManagementView(APIView):
+# class AdminUserManagementView(APIView):
     """
     Admins can list, create, update, and delete non-admin users.
     """
@@ -468,3 +468,134 @@ class AdminUserManagementView(APIView):
             return Response({'message': 'User deleted successfully.'}, status=200)
         except User.DoesNotExist:
             return Response({'error': 'User not found or is admin.'}, status=404)
+class AdminUserManagementView(APIView):
+    """
+    Admins can list, create, update, and delete non-admin users.
+    Assumes:
+    - User model has a JSONField `user_roles` (default=list).
+    - Optional: User model may define `ALLOWED_USER_ROLES = [...]` for validation.
+    - role_required decorator checks that request.user.role is in the given list.
+    """
+
+    @role_required(['admin'])
+    def get(self, request):
+        # List all non-admin users
+        users = User.objects.filter(role='user')
+        user_list = []
+        for user in users:
+            user_list.append({
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'phone_number': user.phone_number,
+                'user_roles': user.user_roles,  # JSONField: likely a list
+                'is_active': user.is_active,
+            })
+        return Response(user_list, status=status.HTTP_200_OK)
+
+    @role_required(['admin'])
+    def post(self, request):
+        # Create a new non-admin user
+        data = request.data
+        required_fields = ['username', 'email', 'phone_number', 'password']
+        if not all(field in data for field in required_fields):
+            return Response({'error': 'Missing required fields.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        username = data['username']
+        email = data['email']
+        phone_number = data['phone_number']
+        password = data['password']
+
+        # Duplicate checks
+        if User.objects.filter(email=email).exists() or User.objects.filter(phone_number=phone_number).exists():
+            return Response({'error': 'Email or phone number already exists.'}, status=status.HTTP_409_CONFLICT)
+        if User.objects.filter(username=username).exists():
+            return Response({'error': 'Username already exists.'}, status=status.HTTP_409_CONFLICT)
+
+        # Hash password
+        hashed_password = make_password(password)
+
+        # Handle user_roles: expect a list of strings (or empty)
+        user_roles = data.get('user_roles', [])
+        if user_roles is None:
+            user_roles = []
+        if not isinstance(user_roles, list):
+            return Response({'error': 'user_roles must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Optional validation against allowed roles
+        allowed = getattr(User, 'ALLOWED_USER_ROLES', None)
+        if allowed is not None:
+            invalid = [r for r in user_roles if r not in allowed]
+            if invalid:
+                return Response(
+                    {'error': f'Invalid roles in user_roles: {invalid}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Create user
+        user = User.objects.create(
+            username=username,
+            email=email,
+            phone_number=phone_number,
+            password=hashed_password,
+            role='user',
+            is_active=True,
+            user_roles=user_roles,
+        )
+        return Response({'message': 'User created successfully.', 'user_id': user.id}, status=status.HTTP_201_CREATED)
+
+    @role_required(['admin'])
+    def put(self, request):
+        # Update a non-admin user (by id)
+        data = request.data
+        user_id = data.get('id')
+        if not user_id:
+            return Response({'error': 'User id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id, role='user')
+        except User.DoesNotExist:
+            return Response({'error': 'User not found or is admin.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Update simple fields
+        for field in ['username', 'email', 'phone_number', 'is_active']:
+            if field in data:
+                setattr(user, field, data[field])
+
+        # Handle user_roles if present
+        if 'user_roles' in data:
+            ur = data['user_roles']
+            if ur is None:
+                ur = []
+            if not isinstance(ur, list):
+                return Response({'error': 'user_roles must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Optional validation
+            allowed = getattr(User, 'ALLOWED_USER_ROLES', None)
+            if allowed is not None:
+                invalid = [r for r in ur if r not in allowed]
+                if invalid:
+                    return Response(
+                        {'error': f'Invalid roles in user_roles: {invalid}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            user.user_roles = ur
+
+        # Handle password change
+        if 'password' in data and data['password']:
+            user.password = make_password(data['password'])
+
+        user.save()
+        return Response({'message': 'User updated successfully.'}, status=status.HTTP_200_OK)
+
+    @role_required(['admin'])
+    def delete(self, request):
+        # Delete a non-admin user (by id)
+        data = request.data
+        user_id = data.get('id')
+        if not user_id:
+            return Response({'error': 'User id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(id=user_id, role='user')
+            user.delete()
+            return Response({'message': 'User deleted successfully.'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found or is admin.'}, status=status.HTTP_404_NOT_FOUND)

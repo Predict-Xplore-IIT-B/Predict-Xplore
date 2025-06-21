@@ -66,7 +66,7 @@ const AdminNavbar = () => {
         <Link to="/admin/dashboard" className={getLinkClass("/admin/dashboard")}>
           Dashboard
         </Link>
-        <Link to="/admin/model-list" className={getLinkClass("/admin/models")}>
+        <Link to="/admin/model-test" className={getLinkClass("/admin/models")}>
           Models
         </Link>
         <Link to="/admin/create-model" className={getLinkClass("/admin/create-model")}>
