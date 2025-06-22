@@ -13,15 +13,17 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+MEDIA_URL = '/media/'
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 load_dotenv()
 
 # email-credentials
 os.environ["EMAIL_ID"] = os.getenv("EMAIL_ID")
 os.environ["EMAIL_PASS"] = os.getenv("EMAIL_PASS")
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 # Quick-start development settings - unsuitable for production
