@@ -14,34 +14,32 @@ from rest_framework import status, permissions
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponse, FileResponse
 from django.utils import timezone
-from django.http import JsonResponse
-from django.http import HttpResponse
-from django.http import FileResponse
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from rest_framework.views import APIView
-from .serializers import ModelOptionsSerializer
-from .models import Model, Pipeline
 from .serializers import ModelOptionsSerializer, ModelSerializer
+from .models import Model, Pipeline, Report, TestCase
 from Architecture.architecture import load_image_segmentation
-from utils.inference import image_segmentation
+from Architecture.architecture import load_image_segmentation, load_human_detection
+from utils.inference import image_segmentation, human_detection
 from utils.generate import generate_report
-from predictor.models import Model
 import matplotlib
+import uuid
+from django.core.files.base import ContentFile
+import logging
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+reports_dir = os.path.join(settings.MEDIA_ROOT, 'reports')
+os.makedirs(reports_dir, exist_ok=True)
 
 # Configure matplotlib to use a non-interactive backend
 matplotlib.use('Agg')
-from Architecture.architecture import (
-    load_image_segmentation,
-    load_human_detection
-)
-from utils.inference import (
-    image_segmentation,
-    human_detection
-)
 
 # Get the user model
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 class uploaded_image:
     session_test_image = None
@@ -61,7 +59,6 @@ def run_inference_call(weight, cv2_image):
 
     if weight.model_type == 'HumanDetection':
         model = load_human_detection(weight.model_file.path)
-
         return human_detection(cv2_image, model)
 
 class UploadModelView(APIView):
@@ -88,7 +85,6 @@ class UploadModelView(APIView):
                 model_image=model_image,
                 created_at=timezone.now()
             )
-
             new_model.save()
         else:
             return Response({'error': 'Please use form-data'}, status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
@@ -127,62 +123,174 @@ class PredictView(APIView):
         serializer = ModelOptionsSerializer(data=request.data)
 
         if not User.objects.filter(username=username).exists():
-            return Response({'error': 'User with this username does not exist. Please register the user.'}, status=404)
+            return Response({'error': 'User with this username does not exist.'}, status=status.HTTP_404_NOT_FOUND)
 
         base64_image = uploaded_image.session_test_image
         if not base64_image:
             return HttpResponse("No image found in session. Please upload the test image first.", status=400)
 
-        img_data = base64.b64decode(base64_image)
-        np_img = np.frombuffer(img_data, dtype=np.uint8)
+        try:
+            img_data = base64.b64decode(base64_image)
+            np_img = np.frombuffer(img_data, dtype=np.uint8)
+            cv2_image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+        except Exception:
+            return HttpResponse("Failed to decode image.", status=400)
 
-        cv2_image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
         if cv2_image is None:
             return HttpResponse("Failed to decode image.", status=400)
 
         if serializer.is_valid():
             selected_models = serializer.validated_data.get("models", [])
-            image_stream = BytesIO()
             weights = []
             outputs = []
 
-            for model in selected_models:
-                try:
-                    weights.append(Model.objects.get(name=model))
-                except Model.DoesNotExist:
-                    return HttpResponse(f"Model '{model}' not found.", status=404)
+            for model_name in selected_models:
+                if model_name == "DummyModel":
+                    # Dummy output placeholder for DummyModel
+                    outputs.append("DUMMY_OUTPUT")
+                    weights.append(type("DummyWeight", (), {"model_type": "Dummy", "name": "DummyModel"})())
+                else:
+                    try:
+                        weights.append(Model.objects.get(name=model_name))
+                    except Model.DoesNotExist:
+                        logger.error(f"Model '{model_name}' not found.")
+                        return Response({"error": f"Model '{model_name}' not found in database. Please create/upload it first."}, status=404)
+
+            if not weights:
+                logger.error("No valid models found for prediction.")
+                return Response({"error": "No valid models found for prediction."}, status=400)
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 futures = [executor.submit(run_inference_call, weight, cv2_image) for weight in weights]
                 for job in concurrent.futures.as_completed(futures):
-                    outputs.append(job.result())
+                    result = job.result()
+                    if result is not None:
+                        outputs.append(result)
+                    else:
+                        logger.warning("Inference output is None for a model.")
 
-            for i, report in enumerate(outputs):
-                if weights[i].model_type == 'ImageSegmentation':
-                    for msk in report:
+            if not outputs:
+                logger.error("Inference did not produce any outputs.")
+                return Response({"error": "Inference did not produce any outputs."}, status=500)
+
+            saved_reports = []
+            test_case = None
+            test_case_id = request.data.get('test_case_id')
+            if test_case_id:
+                try:
+                    test_case = TestCase.objects.get(pk=test_case_id)
+                except TestCase.DoesNotExist:
+                    return Response({'error': 'TestCase not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            for i, inference_output in enumerate(outputs):
+                ml_weight = weights[i]
+                model_name = ml_weight.name
+
+                # DummyModel logic
+                if model_name == "DummyModel":
+                    buffer = BytesIO()
+                    c = canvas.Canvas(buffer, pagesize=letter)
+                    c.setFont("Helvetica-Bold", 20)
+                    c.drawString(100, 700, "This is a dummy report for DummyModel.")
+                    c.setFont("Helvetica", 12)
+                    c.drawString(100, 680, "If you see this, your report saving and download logic works.")
+                    c.save()
+                    buffer.seek(0)
+                    pdf_bytes = buffer.getvalue()
+                    filename_pdf = f"dummy_{uuid.uuid4().hex}.pdf"
+                    report_obj = Report()
+                    if test_case:
+                        report_obj.test_case = test_case
+                    report_obj.report_file.save(filename_pdf, ContentFile(pdf_bytes), save=True)
+                    report_obj.save()
+                    saved_reports.append({
+                        "model": model_name,
+                        "report_id": report_obj.id,
+                        "report_file_url": request.build_absolute_uri(report_obj.report_file.url),
+                    })
+                    continue
+
+                # Ensure inference_output is always a list for segmentation, or wrap it
+                if ml_weight.model_type == 'ImageSegmentation':
+                    if not isinstance(inference_output, (list, tuple)):
+                        inference_output = [inference_output]
+                    for idx, msk in enumerate(inference_output):
+                        image_stream = BytesIO()
                         plt.imshow(msk)
                         plt.axis("off")
                         plt.savefig(image_stream, format='png')
+                        plt.close()
                         image_stream.seek(0)
-                        encoded_image = base64.b64encode(image_stream.getvalue()).decode('utf-8')
-                        # request.session[f'{username}_{selected_models[i]}'] = encoded_image
-                        uploaded_image.encoded_image[f'{username}_{selected_models[i]}'] = encoded_image
 
-                        generate_report(selected_models[i], image_stream, username)
+                        try:
+                            pdf_bytes = generate_report(model_name, image_stream, username)
+                        except Exception as e:
+                            logger.error(f"PDF generation failed: {str(e)}")
+                            return Response({"error": f"PDF generation failed: {str(e)}"}, status=500)
 
-                if weights[i].model_type == 'HumanDetection':
-                    annotated_image = report.plot()
-                    annotated_image = annotated_image[:, :, ::-1]
-                    image = Image.fromarray(annotated_image)
-                    image_buffer = io.BytesIO()
+                        filename_pdf = f"{username}_{model_name}_{uuid.uuid4().hex}.pdf"
+                        report_obj = Report()
+                        if test_case:
+                            report_obj.test_case = test_case
+                        try:
+                            report_obj.report_file.save(filename_pdf, ContentFile(pdf_bytes), save=True)
+                            report_obj.save()
+                        except Exception as e:
+                            logger.error(f"Failed to save report: {str(e)}")
+                            return Response({"error": f"Failed to save report: {str(e)}"}, status=500)
+
+                        if report_obj.report_file and report_obj.report_file.name:
+                            saved_reports.append({
+                                "model": model_name,
+                                "report_id": report_obj.id,
+                                "report_file_url": request.build_absolute_uri(report_obj.report_file.url),
+                            })
+
+                elif ml_weight.model_type == 'HumanDetection':
+                    try:
+                        annotated_image = inference_output.plot()
+                        annotated_image = annotated_image[:, :, ::-1]
+                        image = Image.fromarray(annotated_image)
+                    except Exception as e:
+                        logger.error(f"Failed to process output for {model_name}: {str(e)}")
+                        return Response({"error": f"Failed to process output for {model_name}."}, status=500)
+
+                    image_buffer = BytesIO()
                     image.save(image_buffer, format='png')
                     image_buffer.seek(0)
-                    encoded_image = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
-                    uploaded_image.encoded_image[f'{username}_{selected_models[i]}'] = encoded_image
 
-                    generate_report(selected_models[i], image_buffer, username)
+                    try:
+                        pdf_bytes = generate_report(model_name, image_buffer, username)
+                    except Exception as e:
+                        logger.error(f"PDF generation failed: {str(e)}")
+                        return Response({"error": f"PDF generation failed: {str(e)}"}, status=500)
 
-            return HttpResponse("Inference Successful", status=200)
+                    filename_pdf = f"{username}_{model_name}_{uuid.uuid4().hex}.pdf"
+                    report_obj = Report()
+                    if test_case:
+                        report_obj.test_case = test_case
+                    try:
+                        report_obj.report_file.save(filename_pdf, ContentFile(pdf_bytes), save=True)
+                        report_obj.save()
+                    except Exception as e:
+                        logger.error(f"Failed to save report: {str(e)}")
+                        return Response({"error": f"Failed to save report: {str(e)}"}, status=500)
+
+                    if report_obj.report_file and report_obj.report_file.name:
+                        saved_reports.append({
+                            "model": model_name,
+                            "report_id": report_obj.id,
+                            "report_file_url": request.build_absolute_uri(report_obj.report_file.url),
+                        })
+
+            if not saved_reports:
+                logger.error("No reports were generated or saved.")
+                return Response({"error": "No reports were generated or saved."}, status=500)
+
+            return Response({
+                "message": "Inference successful, report(s) saved.",
+                "reports": saved_reports
+            }, status=status.HTTP_201_CREATED)
 
         return HttpResponse("Invalid data", status=400)
 
@@ -279,8 +387,8 @@ class FetchResultAPIView(APIView):
 class FetchInferenceImage(APIView):
     # pass username and model-name in the URL
     def get(self, request, username, model_name, *args, **kwargs):
-        # base64_image = request.session.get(f'{username}_{model_name}')
-        base64_image = uploaded_image.encoded_image[f'{username}_{model_name}']
+        model_key = f"{username}_{model_name}"
+        base64_image = uploaded_image.encoded_image.get(model_key)
         if not base64_image:
             return HttpResponse("No image found in session.", status=400)
 
@@ -298,9 +406,21 @@ class FetchInferenceImage(APIView):
         return response
 
 class ReportDownloadView(APIView):
-    def get(self, request, filename):
-        report_path = os.path.join(settings.BASE_DIR, 'reports', f"{filename}.pdf")
+    def get(self, request, report_id):
+        """
+        Download a saved report by its Report ID.
+        URL pattern should be: path('download/report/<int:report_id>/', ...)
+        """
+        try:
+            report_obj = Report.objects.get(pk=report_id)
+        except Report.DoesNotExist:
+            return Response({'error': 'Report not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        if os.path.exists(report_path):
-            return FileResponse(open(report_path, 'rb'), content_type='application/pdf', filename=f'{filename}.pdf')
-        return Response({'error': 'Report does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+        file_field = report_obj.report_file
+        if not file_field or not file_field.name or not file_field.storage.exists(file_field.name):
+            return Response({'error': 'No report file found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        response = FileResponse(file_field.open('rb'), content_type='application/pdf')
+        download_name = os.path.basename(file_field.name)
+        response['Content-Disposition'] = f'attachment; filename="{download_name}"'
+        return response
