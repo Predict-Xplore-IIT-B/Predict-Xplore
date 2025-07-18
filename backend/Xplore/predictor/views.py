@@ -27,7 +27,10 @@ from Architecture.architecture import load_image_segmentation
 from utils.inference import image_segmentation
 from utils.generate import generate_report
 from predictor.models import Model
+from utils.xai import generate_cam
 import matplotlib
+import tempfile
+import logging
 
 # Configure matplotlib to use a non-interactive backend
 matplotlib.use('Agg')
@@ -123,6 +126,9 @@ class ImageUploadView(APIView):
 
 class PredictView(APIView):
     def post(self, request, *args, **kwargs):
+        logger = logging.getLogger(__name__)
+        logger.debug("Starting prediction request")
+        
         username = request.data.get('username')
         serializer = ModelOptionsSerializer(data=request.data)
 
@@ -142,9 +148,10 @@ class PredictView(APIView):
 
         if serializer.is_valid():
             selected_models = serializer.validated_data.get("models", [])
-            image_stream = BytesIO()
+            xai_algo = serializer.validated_data.get("xai_algo", None)
             weights = []
             outputs = []
+            report_filenames = []
 
             for model in selected_models:
                 try:
@@ -153,36 +160,109 @@ class PredictView(APIView):
                     return HttpResponse(f"Model '{model}' not found.", status=404)
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = [executor.submit(run_inference_call, weight, cv2_image) for weight in weights]
-                for job in concurrent.futures.as_completed(futures):
-                    outputs.append(job.result())
+                results = list(executor.map(lambda args: run_inference_call(*args), zip(weights, [cv2_image]*len(weights))))
+                outputs = results
 
-            for i, report in enumerate(outputs):
-                if weights[i].model_type == 'ImageSegmentation':
-                    for msk in report:
+            for weight, report, model_name in zip(weights, outputs, selected_models):
+                model_type = weight.model_type
+                report_filename = f"{username}_{model_name}"
+                logger.debug(f"Processing model output for {model_name}")
+                
+                try:
+                    if model_type == 'ImageSegmentation':
+                        msk = report[0] if isinstance(report, (list, tuple, np.ndarray)) and len(report) > 0 else report
+                        # Save model output as base64 for API
+                        import matplotlib.pyplot as plt
+                        from io import BytesIO
+                        buf = BytesIO()
                         plt.imshow(msk)
                         plt.axis("off")
-                        plt.savefig(image_stream, format='png')
-                        image_stream.seek(0)
-                        encoded_image = base64.b64encode(image_stream.getvalue()).decode('utf-8')
-                        # request.session[f'{username}_{selected_models[i]}'] = encoded_image
-                        uploaded_image.encoded_image[f'{username}_{selected_models[i]}'] = encoded_image
+                        plt.savefig(buf, format='png')
+                        buf.seek(0)
+                        encoded_image = base64.b64encode(buf.getvalue()).decode('utf-8')
+                        uploaded_image.encoded_image[f'{username}_{model_name}'] = encoded_image
 
-                        generate_report(selected_models[i], image_stream, username)
+                        # --- XAI logic ---
+                        if xai_algo:
+                            rgb_img = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB) / 255.0
+                            mask_float = (msk == 1).astype(np.float32)
+                            model_obj = weight
+                            try:
+                                target_layers = [
+                                    model_obj.encoder.layer3,
+                                    model_obj.encoder.layer4,
+                                    model_obj.decoder.blocks[0].conv1[0],
+                                    model_obj.decoder.blocks[1].conv1[0],
+                                    model_obj.decoder.blocks[2].conv1[0],
+                                    model_obj.decoder.blocks[3].conv1[0],
+                                    model_obj.decoder.blocks[4].conv1[0],
+                                ]
+                            except Exception:
+                                target_layers = [list(model_obj.children())[-1]]
+                            cam_arr = generate_cam(
+                                model=model_obj,
+                                rgb_img=rgb_img,
+                                mask=mask_float,
+                                target_layers=target_layers,
+                                algo=xai_algo,
+                                device="cuda" if torch.cuda.is_available() else "cpu",
+                                category=1
+                            )
+                            xai_img = cam_arr
+                        # --- END XAI logic ---
 
-                if weights[i].model_type == 'HumanDetection':
-                    annotated_image = report.plot()
-                    annotated_image = annotated_image[:, :, ::-1]
-                    image = Image.fromarray(annotated_image)
-                    image_buffer = io.BytesIO()
-                    image.save(image_buffer, format='png')
-                    image_buffer.seek(0)
-                    encoded_image = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
-                    uploaded_image.encoded_image[f'{username}_{selected_models[i]}'] = encoded_image
+                        # Generate and save report (with both images)
+                        filename = generate_report(
+                            model_name,
+                            msk,
+                            username,
+                            xai_img=xai_img
+                        )
+                        report_path = os.path.join(settings.BASE_DIR, 'reports', filename)
+                        logger.debug(f"Report path: {report_path}")
+                        logger.debug(f"Report exists: {os.path.exists(report_path)}")
+                        if os.path.exists(report_path):
+                            logger.debug(f"Report file size: {os.path.getsize(report_path)} bytes")
+                        
+                        if not os.path.exists(report_path):
+                            logger.error(f"PDF report was not generated at {report_path}")
+                            logger.debug(f"Reports dir contents: {os.listdir(os.path.join(settings.BASE_DIR, 'reports'))}")
+                            return Response({"error": "Report PDF was not generated."}, status=500)
+                        # Return download URL for Insomnia
+                        download_url = f"/model/download/report/{filename.replace('.pdf','')}"
+                        report_filenames.append(download_url)
 
-                    generate_report(selected_models[i], image_buffer, username)
+                    elif model_type == 'HumanDetection':
+                        annotated_image = report.plot()
+                        annotated_image = annotated_image[:, :, ::-1]
+                        from PIL import Image as PILImage
+                        image = PILImage.fromarray(annotated_image)
+                        image_buffer = BytesIO()
+                        image.save(image_buffer, format='png')
+                        image_buffer.seek(0)
+                        encoded_image = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
+                        uploaded_image.encoded_image[f'{username}_{model_name}'] = encoded_image
 
-            return HttpResponse("Inference Successful", status=200)
+                        filename = generate_report(model_name, image, username)
+                        report_path = os.path.join(settings.BASE_DIR, 'reports', filename)
+                        logger.debug(f"Report path: {report_path}")
+                        logger.debug(f"Report exists: {os.path.exists(report_path)}")
+                        if os.path.exists(report_path):
+                            logger.debug(f"Report file size: {os.path.getsize(report_path)} bytes")
+                        
+                        if not os.path.exists(report_path):
+                            logger.error(f"PDF report was not generated at {report_path}")
+                            logger.debug(f"Reports dir contents: {os.listdir(os.path.join(settings.BASE_DIR, 'reports'))}")
+                            return Response({"error": "Report PDF was not generated."}, status=500)
+                        download_url = f"/model/download/report/{filename.replace('.pdf','')}"
+                        report_filenames.append(download_url)
+                except Exception as e:
+                    logger.exception(f"Error generating report for {model_name}: {e}")
+
+            return Response({
+                "message": "Inference Successful",
+                "report_download_links": report_filenames
+            }, status=200)
 
         return HttpResponse("Invalid data", status=400)
 

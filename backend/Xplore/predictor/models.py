@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.contrib.auth import get_user_model
 
@@ -51,6 +52,13 @@ class TestCase(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Created By")
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="Pending", verbose_name="Status")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
+    xai_algo = models.CharField(
+        max_length=32,
+        choices=settings.XAI_ALGOS,
+        null=True,
+        blank=True,
+        help_text="Which XAI algorithm to run (if any)",
+    )
 
     def __str__(self):
         return f"Test Case {self.id} - Status: {self.status}"
