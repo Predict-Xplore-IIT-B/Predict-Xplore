@@ -164,3 +164,12 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ["EMAIL_ID"] # email address
 EMAIL_HOST_PASSWORD = os.environ["EMAIL_PASS"] # password
 DEFAULT_FROM_EMAIL = os.environ["EMAIL_ID"]
+
+# at the bottom of settings.py
+XAI_ALGOS = [
+   ("gradcam", "Grad‑CAM"),
+   ("scorecam", "Score‑CAM"),
+   ("eigengradcam", "EigenGrad‑CAM"),
+   ("ablationcam", "Ablation‑CAM"),
+   # etc.
+]
