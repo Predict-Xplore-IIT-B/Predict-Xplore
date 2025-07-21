@@ -53,12 +53,11 @@ function OTP() {
         toast.success("OTP verified successfully", {
           autoClose: 2000,
           onClose: () => {
-              if (user.role === "admin") {
-                navigate("/admin/dashboard");
-              }
-              else {
-                navigate("/home");
-              }
+            if (user.role === "admin") {
+              navigate("/admin/dashboard");
+            } else {
+              navigate("/home");
+            }
           },
         });
       }

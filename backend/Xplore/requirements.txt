@@ -14,5 +14,8 @@ reportlab
 ultralytics
 gunicorn
 
+requests
+social-auth-app-django
+
 # django-rest-knox
 

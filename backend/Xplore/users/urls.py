@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, include
 from . import views
 
 urlpatterns = [
@@ -20,4 +20,5 @@ urlpatterns = [
 
     # Role assignment (if separate)
     path('user/add-role',        views.AddUserRoles.as_view(),           name='add-user-roles'),
+    path('', include('social_django.urls', namespace='social')),
 ]

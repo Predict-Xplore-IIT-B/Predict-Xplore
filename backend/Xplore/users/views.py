@@ -175,6 +175,24 @@ class verify_email(APIView):
     def get(self, request):
         return Response({'error': 'Invalid request method.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+class LoginOTPVerification(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        otp = request.data.get('otp')
+        user = request.user  # Use the authenticated user
+
+        if user.otp == otp:
+            # check if the OTP has expired
+            if user.otp_expiry and user.otp_expiry < timezone.now():
+                return Response({'error': 'OTP has expired.'}, status=400)
+            user.otp = None  # Clear the OTP once verified
+            user.save()
+
+            return Response({'success':'OTP Verified.'},status=200)
+        else:
+            return Response({'message':'OTP is incorrect'},status=status.HTTP_401_UNAUTHORIZED)
+
 class resend_otp(APIView):
     def post(self, request, case):
         # sends otp again
@@ -203,35 +221,31 @@ class resend_otp(APIView):
 
 class LoginView(APIView):
     def post(self, request):
-        email = request.data.get('email')  # Get the email
-        password = request.data.get('password')  # Get the password
+        username = request.data.get('username')
+        password = request.data.get('password')
 
-        if not email or not password:
-            return Response({'error': 'Email and password are required.'}, status=400)
+        if not username or not password:
+            return Response({'error': 'Username and password are required.'}, status=400)
 
-        # Authenticate the user using email and password
+        # Authenticate the user using username and password
         try:
-            # Retrieve the user by email
-            user = User.objects.get(email=email)
-
-            # Use the username for authentication
-            user = authenticate(username=user.username, password=password)
-
-            if user and user.is_active:
-                # Generate a token for the authenticated user
-                token, created = Token.objects.get_or_create(user=user)
-                user.otp = send_otp(user.username, email, subject_login, body_login_otp)
-                # user.otp = 12345
-                user.otp_expiry = timezone.now() + datetime.timedelta(minutes=OTP_DURATION)
-                user.save()
-
-                user_roles = user.user_roles
-                return Response({'token': token.key, 'message': 'Login successful. Login OTP sent.', 'username':user.username,'phone_number':user.phone_number, 'role':user.role, 'user_roles':user_roles}, status=200)
-
-            return Response({'error': 'Invalid credentials or email not verified.'}, status=401)
-
+            user = User.objects.get(username=username)
         except User.DoesNotExist:
-            return Response({'error': 'User with this email does not exist.'}, status=404)
+            return Response({'error': 'User with this username does not exist.'}, status=404)
+
+        user = authenticate(username=username, password=password)
+
+        if user and user.is_active:
+            # Generate a token for the authenticated user
+            token, created = Token.objects.get_or_create(user=user)
+            user.otp = send_otp(user.username, user.email, subject_login, body_login_otp)
+            user.otp_expiry = timezone.now() + datetime.timedelta(minutes=OTP_DURATION)
+            user.save()
+
+            user_roles = user.user_roles
+            return Response({'token': token.key, 'message': 'Login successful. Login OTP sent.', 'username':user.username,'phone_number':user.phone_number, 'role':user.role, 'user_roles':user_roles}, status=200)
+
+        return Response({'error': 'Invalid credentials or email not verified.'}, status=401)
 
     def get(self, request):
         return Response({'error': 'Invalid request method.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
@@ -272,32 +286,6 @@ class LogoutView(APIView):
 
     def get(self, request):
         return Response({'error': 'Invalid request method. Use POST to log out.'}, status=405)
-
-class LoginOTPVerification(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        email = request.data.get('email')
-        otp = request.data.get('otp')
-
-        try:
-            # Retrieve the user by email
-            user = User.objects.get(email=email)
-
-            # Check if the OTP matches
-            if user.otp == otp:
-                # check if the OTP has expired
-                if user.otp_expiry and user.otp_expiry < timezone.now():
-                    return Response({'error': 'OTP has expired.'}, status=400)
-                user.otp = None  # Clear the OTP once verified
-                user.save()
-
-                return Response({'success':'OTP Verified.'},status=200)
-            else:
-                return Response({'message':'OTP is incorrect'},status=status.HTTP_401_UNAUTHORIZED)
-
-        except User.DoesNotExist:
-            return Response({'error': 'User with this email does not exist.'}, status=404)
 
 class AddUserRoles(APIView):
     # Admin-only access, to be implemented
