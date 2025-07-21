@@ -2,7 +2,6 @@ import os
 import re
 import random
 import datetime
-import ldap
 from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
@@ -31,9 +30,7 @@ class AdminOnlyView(APIView):
         return Response({'message': 'Welcome, Admin!'})
 
 OTP_DURATION = 5         # minutes
-LDAP_URL = 'ldap://localhost:10389'
-LDAP_ADMIN_ID = "uid=admin,ou=system"
-LDAP_ADMIN_PASSWD = os.getenv("LDAP_ADMIN_PASSWORD")
+
 
 # body text
 body_email_verification_otp = """
@@ -201,48 +198,6 @@ class resend_otp(APIView):
     def get(self, request):
         return Response({'error': 'Invalid request method.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
-class LdapRegisterView(APIView):
-    def post(self, request):
-        username = request.data.get('ldap_id')
-        password = request.data.get('ldap_passwd')
-        confirm_password = request.data.get('ldap_confirm_passwd')
-
-        if password != confirm_password:
-            return Response({'error': 'Passwords do not match.'}, status=400)
-
-        user = User.objects.get(username=username)
-        
-        # Add the user to LDAP directory
-        new_user_dn = f"uid={user.username},ou=users,ou=system"
-        surname = user.username.split(" ")[-1] if " " in user.username else user.username
-        common_name = user.username.split(" ")[-2] if " " in user.username else user.username
-        
-        user_attributes = {
-            "objectClass": [b"inetOrgPerson", b"organizationalPerson", b"person", b"top"],
-            "sn": [surname.encode('utf-8')],
-            "cn": [common_name.encode('utf-8')],
-            "uid": [user.username.encode("utf-8")],
-            "userPassword": [password.encode("utf-8")],
-        }
-
-        try:
-            conn = ldap.initialize(LDAP_URL)
-            conn.simple_bind_s(LDAP_ADMIN_ID, LDAP_ADMIN_PASSWD)
-            print("Connected to LDAP Successfully.")
-
-            entry = [(k, v) for k, v in user_attributes.items()]
-
-            # Add user
-            conn.add_s(new_user_dn, entry)
-            print(f"User {user.username} added to LDAP directory successfully.")
-
-        except ldap.LDAPError as e:
-            return Response({"message":"LDAP registration unsuccessful."}, status=status.HTTP_400_BAD_REQUEST)
-
-        finally:
-            conn.unbind()
-        
-        return Response({'message':'User added to LDAP directory.'},status=200)
 
 # Login API-> allows the user to login once email verification via OTP is successful
 
@@ -257,7 +212,6 @@ class LoginView(APIView):
         # Authenticate the user using email and password
         try:
             # Retrieve the user by email
-            from users.models import User  # Adjust import path if needed
             user = User.objects.get(email=email)
 
             # Use the username for authentication
@@ -281,30 +235,6 @@ class LoginView(APIView):
 
     def get(self, request):
         return Response({'error': 'Invalid request method.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
-
-class LdapAuth(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        ldap_uid = request.data.get('ldap_uid') # same as username in login credentials
-        ldap_password = request.data.get('ldap_password')
-
-        try:
-            ldap_conn = ldap.initialize(LDAP_URL) # default port
-            # binding with the LDAP server or check if the user exists in LDAP directory
-            ldap_conn.simple_bind_s(f'uid={ldap_uid},ou=users,ou=system', ldap_password)
-
-            user = User.objects.get(username=ldap_uid)
-            # log in the user
-            login(request, user)
-            return Response({"message":"LDAP Authentication Successful and Credentials Verified."})
-
-        except ldap.LDAPError:
-            # If LDAP authentication fails
-            return Response({"message":"LDAP Authentication Failed. Please try again."})
-
-    def get(self, request):
-        return Response({'error': 'Invalid request method.'}, status=405)
 
 
 class LogoutView(APIView):
@@ -362,7 +292,7 @@ class LoginOTPVerification(APIView):
                 user.otp = None  # Clear the OTP once verified
                 user.save()
 
-                return Response({'success':'OTP Verified. Proceed to LDAP authentication.'},status=200)
+                return Response({'success':'OTP Verified.'},status=200)
             else:
                 return Response({'message':'OTP is incorrect'},status=status.HTTP_401_UNAUTHORIZED)
 

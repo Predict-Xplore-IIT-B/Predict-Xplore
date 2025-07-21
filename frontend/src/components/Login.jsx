@@ -46,7 +46,7 @@ function Login() {
         setEmail("");
         toast.success("Logged In Successfuly", {
           autoClose: 2000, onClose: () => {
-            navigate("/ldpa", { state: { view: "otp" } });
+            navigate("/otp", { state: { view: "otp" } });
           }
         })
       }

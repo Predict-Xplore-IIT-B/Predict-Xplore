@@ -6,7 +6,6 @@ import Modeltestpage from './user/Modeltestpage';
 import Modeltestrunpage from './user/Modeltestrunpage';
 import Reportpage from './user/Reportpage';
 import Login from './components/Login';
-import LDPA from './components/LDPA';
 import OTP from './components/OTP';
 import Register from './components/Register';
 import CreateModel from './admin/pages/CreateModel';
@@ -28,7 +27,6 @@ function App() {
           <Route path='/' element={<Register role="user"/> }/>
           {/* login part */}
           <Route path="/login" element={<Login />} />
-          <Route path="/ldpa" element={<LDPA />} />
           <Route path="/otp" element={<OTP />} />
           <Route path="/user/register" element={<Register role="user" />} />
           <Route path="/admin/register" element={<Register role="admin" />} />

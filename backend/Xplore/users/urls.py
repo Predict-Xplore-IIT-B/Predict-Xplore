@@ -12,9 +12,7 @@ urlpatterns = [
     path('verify-token',         views.CheckTokenValidity.as_view(),    name='verify-token'),
     path('logout',               views.LogoutView.as_view(),            name='logout'),
 
-    # LDAP integration
-    path('verify-ldap',          views.LdapAuth.as_view(),              name='verify-ldap'),
-    path('ldap/register',        views.LdapRegisterView.as_view(),      name='ldap-register'),
+    
     path('verify-otp',           views.LoginOTPVerification.as_view(),   name='verify-otp'),
 
     # Admin-only user CRUD (non-admin users)
