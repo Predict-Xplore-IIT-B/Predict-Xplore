@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, include
 from . import views
 
 urlpatterns = [
@@ -12,9 +12,7 @@ urlpatterns = [
     path('verify-token',         views.CheckTokenValidity.as_view(),    name='verify-token'),
     path('logout',               views.LogoutView.as_view(),            name='logout'),
 
-    # LDAP integration
-    path('verify-ldap',          views.LdapAuth.as_view(),              name='verify-ldap'),
-    path('ldap/register',        views.LdapRegisterView.as_view(),      name='ldap-register'),
+    
     path('verify-otp',           views.LoginOTPVerification.as_view(),   name='verify-otp'),
 
     # Admin-only user CRUD (non-admin users)
@@ -22,4 +20,5 @@ urlpatterns = [
 
     # Role assignment (if separate)
     path('user/add-role',        views.AddUserRoles.as_view(),           name='add-user-roles'),
+    path('', include('social_django.urls', namespace='social')),
 ]
