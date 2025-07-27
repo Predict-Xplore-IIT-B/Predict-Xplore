@@ -2,7 +2,8 @@ import os
 import io
 import json
 import concurrent.futures
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 import numpy as np
 import base64
 import torch
