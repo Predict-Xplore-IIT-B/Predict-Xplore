@@ -10,3 +10,4 @@ Xplore/reports/*
 rush/
 .venv/
 *.whl
+backend/Xplore/media/
