@@ -1,89 +1,94 @@
+# utils/generate.py
+
 import os
 import tempfile
 import logging
+from io import BytesIO
+import numpy as np
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from django.conf import settings
+from PIL import Image as PILImage
+from django.utils import timezone
 
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+def _convert_to_pil(img_data):
+    """A helper function to safely convert different image formats to a standard PIL Image."""
+    if img_data is None:
+        return None
+    try:
+        if isinstance(img_data, np.ndarray):
+            # Convert numpy array (e.g., from OpenCV or a model mask) to PIL Image
+            if img_data.max() <= 1.0: # Handle normalized masks
+                img_data = (img_data * 255)
+            return PILImage.fromarray(img_data.astype(np.uint8)).convert("RGB")
+        if isinstance(img_data, PILImage.Image):
+            # Ensure image is in a standard RGB format
+            return img_data.convert("RGB")
+        
+        logger.warning(f"Unsupported image type for report: {type(img_data)}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to process image data for report: {e}")
+        return None
 
 def generate_report(title, model_output_img, username, xai_img=None):
-    logger.debug(f"Starting generate_report for username={username} title={title}")
-    import matplotlib.pyplot as plt
-    from PIL import Image as PILImage
-    from io import BytesIO
-
-    # Ensure reports directory exists
-    reports_dir = os.path.join(settings.BASE_DIR, 'reports')
-    if not os.path.exists(reports_dir):
-        os.makedirs(reports_dir)
-        logger.debug(f"Created reports directory at {reports_dir}")
+    """
+    Generates a PDF report in memory containing model outputs and optional XAI visualizations.
+    """
+    logger.debug(f"Generating report for {username} - {title}")
     
-    logger.debug(f"Reports directory path: {reports_dir}")
-    logger.debug(f"Reports directory exists: {os.path.exists(reports_dir)}")
-
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+    story = []
     temp_files = []
-    def save_img_to_temp(img):
-        if img is None:
-            logger.debug("No image provided to save_img_to_temp")
-            return None
-        if isinstance(img, BytesIO):
-            img.seek(0)
-            pil_img = PILImage.open(img).convert("RGB")
-        elif isinstance(img, PILImage.Image):
-            pil_img = img.convert("RGB")
-        elif isinstance(img, (list, tuple)) or (hasattr(img, 'shape') and len(img.shape) >= 2):
-            arr = img
-            if hasattr(arr, "max") and arr.max() <= 1.0:
-                arr = (arr * 255).astype('uint8')
-            pil_img = PILImage.fromarray(arr).convert("RGB")
-        else:
-            raise ValueError("Unsupported image type for report generation.")
-        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        temp.close()
-        temp_files.append(temp.name)
-        logger.debug(f"Saved temporary image at {temp.name}")
-        return temp.name
 
-    model_img_path = save_img_to_temp(model_output_img)
-    xai_img_path = save_img_to_temp(xai_img) if xai_img is not None else None
-
-    document = []
-    document.append(Paragraph("Model Output", ParagraphStyle(name='ModelTitle', fontSize=16, spaceAfter=10)))
-    document.append(RLImage(model_img_path, 8*inch, 6*inch))
-    if xai_img_path:
-        document.append(Spacer(1, 20))
-        document.append(Paragraph("XAI Explanation", ParagraphStyle(name='XAITitle', fontSize=16, spaceAfter=10)))
-        document.append(RLImage(xai_img_path, 8*inch, 6*inch))
-
-    filename = f'{username}_{title}.pdf'
-    filepath = os.path.join(reports_dir, filename)
-    logger.debug(f"Attempting to generate PDF at {filepath}")
-    
     try:
-        doc = SimpleDocTemplate(filepath, pagesize=letter)
-        doc.build(document)
-        logger.debug(f"Successfully generated PDF at {filepath}")
-        logger.debug(f"PDF file exists: {os.path.exists(filepath)}")
-        logger.debug(f"PDF file size: {os.path.getsize(filepath)} bytes")
+        # A list of images and their titles to add to the PDF
+        images_to_add = [
+            ("Model Output", model_output_img),
+            ("XAI Explanation", xai_img)
+        ]
+
+        for img_title, img_data in images_to_add:
+            if img_data is None:
+                continue
+            
+            pil_img = _convert_to_pil(img_data)
+            if not pil_img:
+                continue
+
+            # Create a temporary file to hold the image for the PDF library
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                pil_img.save(temp_file, format='PNG')
+                temp_files.append(temp_file.name)
+                
+                # Add the title and image to the PDF story
+                story.append(Paragraph(img_title, ParagraphStyle(name='Title', fontSize=16, spaceAfter=10)))
+                story.append(RLImage(temp_file.name, width=6*inch, height=4.5*inch, kind='proportional'))
+                story.append(Spacer(1, 0.25*inch))
+
+        if not story:
+            logger.error("No valid content could be generated for the PDF report.")
+            return None, None
+
+        # Build the PDF from the story
+        doc.build(story)
+        
+        filename = f'{username}_{title}_{timezone.now().strftime("%Y%m%d%H%M%S")}.pdf'
+        pdf_buffer.seek(0)
+        return pdf_buffer, filename
+
     except Exception as e:
-        logger.error(f"Error generating PDF: {e}", exc_info=True)
-        raise
+        logger.error(f"Failed to build the PDF document: {e}")
+        return None, None
+    finally:
+        # CRITICAL: Ensure all temporary files are deleted, even if errors occurred.
+        for f in temp_files:
+            try:
+                os.remove(f)
+            except Exception as e:
+                logger.error(f"Failed to clean up temporary file {f}: {e}")
 
-    # Clean up temp files
-    for f in temp_files:
-        try:
-            os.remove(f)
-            logger.debug(f"Cleaned up temp file {f}")
-        except Exception as e:
-            logger.error(f"Failed to clean up temp file {f}: {e}")
-
-    return filename
-
-def generate_complete_report():
-    if not os.path.exists(os.path.join(settings.BASE_DIR, 'reports')):
-        os.makedirs('reports')

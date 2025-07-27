@@ -2,6 +2,7 @@ import os
 import io
 import json
 import concurrent.futures
+from venv import logger
 import numpy as np
 import base64
 import torch
@@ -31,6 +32,11 @@ from utils.xai import generate_cam
 import matplotlib
 import tempfile
 import logging
+from django.core.files.base import ContentFile
+from .models import TestCase, Report 
+from django.utils import timezone
+from utils.xai import generate_cam, generate_detection_cam
+
 
 # Configure matplotlib to use a non-interactive backend
 matplotlib.use('Agg')
@@ -51,21 +57,29 @@ class uploaded_image:
     encoded_image = {}
 
 def run_inference_call(weight, cv2_image):
-    if weight.model_type == 'ImageSegmentation':
-        # Load the segmentation model and device
-        model, device = load_image_segmentation()
+    """
+    Helper function to run inference based on model type.
+    For HumanDetection, it returns the loaded model as well for XAI use.
+    """
+    try:
+        if weight.model_type == 'ImageSegmentation':
+            model, device = load_image_segmentation()
+            model.load_state_dict(torch.load(weight.model_file, map_location=device))
+            model.to(device)
+            model.eval()
+            # For segmentation, we return the mask output and the loaded model
+            return image_segmentation(cv2_image, model, device), model
 
-        # Load model weights
-        model.load_state_dict(torch.load(weight.model_file, map_location=device))
-        model.to(device)
-
-        # Run inference
-        return image_segmentation(cv2_image, model, device)
-
-    if weight.model_type == 'HumanDetection':
-        model = load_human_detection(weight.model_file.path)
-
-        return human_detection(cv2_image, model)
+        if weight.model_type == 'HumanDetection':
+            model = load_human_detection(weight.model_file.path)
+            # For detection, return both the results object and the loaded model
+            results = human_detection(cv2_image, model)
+            return results, model 
+            
+    except Exception as e:
+        logger.error(f"Error during inference for model {weight.name}: {e}")
+    
+    return None, None
 
 class UploadModelView(APIView):
     def post(self, request):
@@ -98,173 +112,198 @@ class UploadModelView(APIView):
 
         return Response({'message': 'Model successfully uploaded.'}, status=status.HTTP_201_CREATED)
 
+# views.py
+
+# predictor/views.py
+
+# --- Replace your old ImageUploadView with this one ---
 class ImageUploadView(APIView):
+    """
+    Handles the initial image upload.
+    Creates a TestCase in the database to reliably store the image for the next step.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
-        content_type = request.content_type
+        image_file = request.FILES.get('image')
+        if not image_file:
+            return Response({"error": "An image file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if 'multipart/form-data' in content_type:
-            image_file = request.FILES.get('image')
-            if not image_file:
-                return HttpResponse("No image file uploaded.", status=400)
+        test_case = TestCase.objects.create(
+            created_by=request.user,
+            test_image=image_file,
+            status='Pending'
+        )
 
-            image_bytes = image_file.read()
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        elif 'application/json' in content_type:
-            image_data = request.data.get('image')
-            if not image_data:
-                return HttpResponse("No base64 image data provided. Please provide the data.", status=400)
+        return Response({
+            "message": "Image uploaded successfully and saved to a test case.",
+            "test_case_id": test_case.id
+        }, status=status.HTTP_201_CREATED)
 
-            base64_image = image_data
-        elif 'image/jpeg' in content_type or 'image/png' in content_type:
-            image_bytes = request.body
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        else:
-            return HttpResponse("Unsupported media type. Try uploading Jpeg format", status=415)
 
-        uploaded_image.session_test_image = base64_image
-        return HttpResponse("Image processed and stored in session.", status=200)
+# --- Replace your old PredictView with this one ---
+# predictor/views.py
+
+# --- REPLACE THIS ENTIRE CLASS ---
+# predictor/views.py
+
+# ... (keep all other imports and functions)
+
+# predictor/views.py
+
+# ... (keep all other imports and functions)
 
 class PredictView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        logger = logging.getLogger(__name__)
-        logger.debug("Starting prediction request")
-        
-        username = request.data.get('username')
         serializer = ModelOptionsSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        validated_data = serializer.validated_data
+        test_case_id = validated_data.get('test_case_id') 
+        selected_models = validated_data.get("models", [])
+        xai_algo = validated_data.get("xai_algo")
+        target_class = validated_data.get("target_class")
 
-        if not User.objects.filter(username=username).exists():
-            return Response({'error': 'User with this username does not exist. Please register the user.'}, status=404)
+        if not test_case_id:
+            return Response({'error': 'A "test_case_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        base64_image = uploaded_image.session_test_image
-        if not base64_image:
-            return HttpResponse("No image found in session. Please upload the test image first.", status=400)
+        try:
+            test_case = TestCase.objects.get(pk=test_case_id, created_by=request.user)
+        except TestCase.DoesNotExist:
+            return Response({'error': 'Test case not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        img_data = base64.b64decode(base64_image)
-        np_img = np.frombuffer(img_data, dtype=np.uint8)
+        try:
+            image_path = test_case.test_image.path
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist for TestCase {test_case_id}: {image_path}")
+                return Response({'error': f"Image file not found at path: {image_path}"}, status=status.HTTP_404_NOT_FOUND)
+            cv2_image = cv2.imread(image_path)
+            if cv2_image is None: raise ValueError("Failed to read image from path.")
+        except Exception as e:
+            logger.error(f"Error reading image for TestCase {test_case_id}: {e}")
+            return Response({'error': 'Failed to process the uploaded image.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        weights = [Model.objects.get(name=name) for name in selected_models]
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            inference_results = list(executor.map(run_inference_call, weights, [cv2_image]*len(weights)))
 
-        cv2_image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-        if cv2_image is None:
-            return HttpResponse("Failed to decode image.", status=400)
+        report_urls = []
+        for weight, result_tuple, model_name in zip(weights, inference_results, selected_models):
+            if not result_tuple or result_tuple[0] is None:
+                logger.warning(f"Skipping report for model '{model_name}': empty inference result.")
+                continue
 
-        if serializer.is_valid():
-            selected_models = serializer.validated_data.get("models", [])
-            xai_algo = serializer.validated_data.get("xai_algo", None)
-            weights = []
-            outputs = []
-            report_filenames = []
+            try:
+                xai_output_image, model_output_image = None, None
+                model_output, loaded_model = result_tuple
 
-            for model in selected_models:
-                try:
-                    weights.append(Model.objects.get(name=model))
-                except Model.DoesNotExist:
-                    return HttpResponse(f"Model '{model}' not found.", status=404)
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                results = list(executor.map(lambda args: run_inference_call(*args), zip(weights, [cv2_image]*len(weights))))
-                outputs = results
-
-            for weight, report, model_name in zip(weights, outputs, selected_models):
-                model_type = weight.model_type
-                report_filename = f"{username}_{model_name}"
-                logger.debug(f"Processing model output for {model_name}")
-                
-                try:
-                    if model_type == 'ImageSegmentation':
-                        msk = report[0] if isinstance(report, (list, tuple, np.ndarray)) and len(report) > 0 else report
-                        # Save model output as base64 for API
-                        import matplotlib.pyplot as plt
-                        from io import BytesIO
-                        buf = BytesIO()
-                        plt.imshow(msk)
-                        plt.axis("off")
-                        plt.savefig(buf, format='png')
-                        buf.seek(0)
-                        encoded_image = base64.b64encode(buf.getvalue()).decode('utf-8')
-                        uploaded_image.encoded_image[f'{username}_{model_name}'] = encoded_image
-
-                        # --- XAI logic ---
-                        if xai_algo:
-                            rgb_img = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB) / 255.0
-                            mask_float = (msk == 1).astype(np.float32)
-                            model_obj = weight
-                            try:
-                                target_layers = [
-                                    model_obj.encoder.layer3,
-                                    model_obj.encoder.layer4,
-                                    model_obj.decoder.blocks[0].conv1[0],
-                                    model_obj.decoder.blocks[1].conv1[0],
-                                    model_obj.decoder.blocks[2].conv1[0],
-                                    model_obj.decoder.blocks[3].conv1[0],
-                                    model_obj.decoder.blocks[4].conv1[0],
-                                ]
-                            except Exception:
-                                target_layers = [list(model_obj.children())[-1]]
-                            cam_arr = generate_cam(
-                                model=model_obj,
-                                rgb_img=rgb_img,
-                                mask=mask_float,
-                                target_layers=target_layers,
-                                algo=xai_algo,
-                                device="cuda" if torch.cuda.is_available() else "cpu",
-                                category=1
+                if weight.model_type == 'ImageSegmentation':
+                    model_output_image = model_output[0] if isinstance(model_output, (list, tuple, np.ndarray)) else model_output
+                    if xai_algo and target_class:
+                        # --- Ensure classes are present and include 'forest' if missing ---
+                        if not hasattr(weight, "classes") or not weight.classes or len(weight.classes) == 0:
+                            weight.classes = ["forest"]
+                        elif "forest" not in weight.classes:
+                            weight.classes.append("forest")
+                        # --- Check if target_class is in model's classes ---
+                        if target_class not in weight.classes:
+                            logger.error(f"Target category '{target_class}' not found in the list of classes for model '{model_name}'.")
+                            return Response(
+                                {'error': f"Target category '{target_class}' not found in the list of classes for model '{model_name}'. "
+                                          f"Available classes: {weight.classes}"},
+                                status=status.HTTP_400_BAD_REQUEST
                             )
-                            xai_img = cam_arr
-                        # --- END XAI logic ---
+                        rgb_image_for_xai = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB) / 255.0
 
-                        # Generate and save report (with both images)
-                        filename = generate_report(
-                            model_name,
-                            msk,
-                            username,
-                            xai_img=xai_img
+                        # --- Pad image so height and width are divisible by 32 ---
+                        def pad_to_divisible(img, div=32, value=0):
+                            h, w = img.shape[:2]
+                            pad_h = (div - h % div) if h % div != 0 else 0
+                            pad_w = (div - w % div) if w % div != 0 else 0
+                            return np.pad(
+                                img,
+                                ((0, pad_h), (0, pad_w), (0, 0)),
+                                mode='constant',
+                                constant_values=value
+                            )
+                        rgb_image_for_xai_padded = pad_to_divisible(rgb_image_for_xai, 32, 0)
+
+                        # Also pad/crop the mask to match the padded image shape
+                        padded_h, padded_w = rgb_image_for_xai_padded.shape[:2]
+                        mask_h, mask_w = model_output_image.shape[:2]
+                        pad_h = padded_h - mask_h
+                        pad_w = padded_w - mask_w
+                        if pad_h >= 0 and pad_w >= 0:
+                            model_output_image = np.pad(
+                                model_output_image,
+                                ((0, pad_h), (0, pad_w)),
+                                mode='constant',
+                                constant_values=0
+                            )
+                        else:
+                            # If mask is larger, crop it to fit the padded image
+                            model_output_image = model_output_image[:padded_h, :padded_w]
+
+                        target_layers = [loaded_model.decoder.blocks[4].conv1[0]]
+                        xai_output_image = generate_cam(
+                            model=loaded_model, rgb_img=rgb_image_for_xai_padded, model_output_mask=model_output_image,
+                            target_layers=target_layers, target_category_name=target_class,
+                            all_classes=weight.classes, algo=xai_algo,
+                            device="cuda" if torch.cuda.is_available() else "cpu"
                         )
-                        report_path = os.path.join(settings.BASE_DIR, 'reports', filename)
-                        logger.debug(f"Report path: {report_path}")
-                        logger.debug(f"Report exists: {os.path.exists(report_path)}")
-                        if os.path.exists(report_path):
-                            logger.debug(f"Report file size: {os.path.getsize(report_path)} bytes")
+
+                elif weight.model_type == 'HumanDetection':
+                    model_output_image = Image.fromarray(model_output.plot()[:, :, ::-1])
+                    if xai_algo:
+                        # --- FIX: Resize image to model's expected input size (e.g., 640x640) ---
+                        # Ultralytics YOLO models typically expect 640x640 input
+                        expected_size = (640, 640)
+                        rgb_img = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+                        rgb_img_resized = cv2.resize(rgb_img, expected_size)
+                        rgb_img_float = np.float32(rgb_img_resized) / 255.0
+                        input_tensor = torch.from_numpy(np.transpose(rgb_img_float, (2, 0, 1))).unsqueeze(0)
+                        input_tensor = input_tensor.requires_grad_()  # <-- Ensure requires_grad=True
+
+                        # --- Wrap model for pytorch-grad-cam compatibility ---
+                        class ModelWrapper(torch.nn.Module):
+                            def __init__(self, model):
+                                super().__init__()
+                                self.model = model
+                            def forward(self, x):
+                                out = self.model(x)
+                                # Return only the first element if tuple
+                                return out[0] if isinstance(out, tuple) else out
+
+                        cam_model = ModelWrapper(loaded_model.model)
+
+                        target_layers = [loaded_model.model.model[9]] 
                         
-                        if not os.path.exists(report_path):
-                            logger.error(f"PDF report was not generated at {report_path}")
-                            logger.debug(f"Reports dir contents: {os.listdir(os.path.join(settings.BASE_DIR, 'reports'))}")
-                            return Response({"error": "Report PDF was not generated."}, status=500)
-                        # Return download URL for Insomnia
-                        download_url = f"/model/download/report/{filename.replace('.pdf','')}"
-                        report_filenames.append(download_url)
+                        # --- Enable gradients for Grad-CAM ---
+                        with torch.set_grad_enabled(True):
+                            xai_output_image = generate_detection_cam(
+                                model=cam_model, input_tensor=input_tensor,
+                                target_layers=target_layers, rgb_img=rgb_img_float
+                            )
 
-                    elif model_type == 'HumanDetection':
-                        annotated_image = report.plot()
-                        annotated_image = annotated_image[:, :, ::-1]
-                        from PIL import Image as PILImage
-                        image = PILImage.fromarray(annotated_image)
-                        image_buffer = BytesIO()
-                        image.save(image_buffer, format='png')
-                        image_buffer.seek(0)
-                        encoded_image = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
-                        uploaded_image.encoded_image[f'{username}_{model_name}'] = encoded_image
+                pdf_buffer, report_filename = generate_report(
+                    title=model_name, model_output_img=model_output_image,
+                    username=request.user.username, xai_img=xai_output_image
+                )
 
-                        filename = generate_report(model_name, image, username)
-                        report_path = os.path.join(settings.BASE_DIR, 'reports', filename)
-                        logger.debug(f"Report path: {report_path}")
-                        logger.debug(f"Report exists: {os.path.exists(report_path)}")
-                        if os.path.exists(report_path):
-                            logger.debug(f"Report file size: {os.path.getsize(report_path)} bytes")
-                        
-                        if not os.path.exists(report_path):
-                            logger.error(f"PDF report was not generated at {report_path}")
-                            logger.debug(f"Reports dir contents: {os.listdir(os.path.join(settings.BASE_DIR, 'reports'))}")
-                            return Response({"error": "Report PDF was not generated."}, status=500)
-                        download_url = f"/model/download/report/{filename.replace('.pdf','')}"
-                        report_filenames.append(download_url)
-                except Exception as e:
-                    logger.exception(f"Error generating report for {model_name}: {e}")
+                if pdf_buffer:
+                    report_instance = Report.objects.create(test_case=test_case)
+                    report_instance.report_file.save(report_filename, ContentFile(pdf_buffer.read()), save=True)
+                    download_url = request.build_absolute_uri(f'/model/download/report/{report_instance.id}')
+                    report_urls.append({"model_name": model_name, "download_url": download_url})
 
-            return Response({
-                "message": "Inference Successful",
-                "report_download_links": report_filenames
-            }, status=200)
+            except Exception as e:
+                logger.exception(f"Error processing model {model_name}: {e}")
 
-        return HttpResponse("Invalid data", status=400)
+        test_case.status = 'Completed'
+        test_case.save()
+        return Response({"message": "Inference and report generation complete.", "reports": report_urls}, status=status.HTTP_200_OK)
 
 def home(request):
     return JsonResponse({"message": "Welcome to the Dashboard API"})
@@ -377,10 +416,14 @@ class FetchInferenceImage(APIView):
 
         return response
 
-class ReportDownloadView(APIView):
-    def get(self, request, filename):
-        report_path = os.path.join(settings.BASE_DIR, 'reports', f"{filename}.pdf")
+# views.py
 
-        if os.path.exists(report_path):
-            return FileResponse(open(report_path, 'rb'), content_type='application/pdf', filename=f'{filename}.pdf')
-        return Response({'error': 'Report does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+class ReportDownloadView(APIView):
+    # permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, report_id):
+        # Fetch the report by its ID, ensuring the user has access
+        report = get_object_or_404(Report, pk=report_id, test_case__created_by=request.user)
+        
+        # Serve the file from the FileField
+        return FileResponse(report.report_file, as_attachment=True, filename=report.report_file.name)

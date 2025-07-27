@@ -173,3 +173,10 @@ XAI_ALGOS = [
    ("ablationcam", "Ablation‑CAM"),
    # etc.
 ]
+# In Xplore/settings.py
+
+# ... (all your other settings)
+
+# --- ADD THESE TWO LINES AT THE END OF THE FILE ---
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
