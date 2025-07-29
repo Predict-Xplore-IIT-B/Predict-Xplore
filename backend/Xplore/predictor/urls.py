@@ -20,10 +20,7 @@ urlpatterns = [
     path('pipelines/create/', create_pipeline, name='pipeline-create'),
     path('home/', home, name='home'),  # Home page for the API
     path('output/<str:username>/<str:model_name>', FetchInferenceImage.as_view(), name='fetch-inference-image'),
-    path('download/report/<str:filename>', ReportDownloadView.as_view(), name='download-report'),
+    path('download/report/<int:report_id>', ReportDownloadView.as_view(), name='download-report'),
     path('create-model/', CreateModelView.as_view(), name='create-model'),  # For creating models
-    path('home/', home, name='home'),  # Use the `home` function
-    path('output/<str:username>/<str:model_name>', FetchInferenceImage.as_view()),
-    path('download/report/<str:filename>', ReportDownloadView.as_view()),
-    path('create',UploadModelView.as_view()),
+    path('create', UploadModelView.as_view()),
 ]

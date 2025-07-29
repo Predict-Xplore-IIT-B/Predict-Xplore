@@ -192,3 +192,19 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ["EMAIL_ID"] # email address
 EMAIL_HOST_PASSWORD = os.environ["EMAIL_PASS"] # password
 DEFAULT_FROM_EMAIL = os.environ["EMAIL_ID"]
+
+# at the bottom of settings.py
+XAI_ALGOS = [
+   ("gradcam", "Grad‑CAM"),
+   ("scorecam", "Score‑CAM"),
+   ("eigengradcam", "EigenGrad‑CAM"),
+   ("ablationcam", "Ablation‑CAM"),
+   # etc.
+]
+# In Xplore/settings.py
+
+# ... (all your other settings)
+
+# --- ADD THESE TWO LINES AT THE END OF THE FILE ---
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

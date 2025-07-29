@@ -9,3 +9,5 @@ Xplore/model_images/*
 Xplore/reports/*
 rush/
 .venv/
+*.whl
+backend/Xplore/media/

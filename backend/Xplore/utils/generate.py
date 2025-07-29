@@ -1,34 +1,94 @@
+# utils/generate.py
+
 import os
-from reportlab.lib.enums import TA_CENTER
+import tempfile
+import logging
+from io import BytesIO
+import numpy as np
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from django.conf import settings
+from PIL import Image as PILImage
+from django.utils import timezone
 
+logger = logging.getLogger(__name__)
 
-# currently reports are being saved in the file directory
-def generate_report(title, image, username):
-    if not os.path.exists(os.path.join(settings.BASE_DIR, 'reports')):
-        os.makedirs('reports')
+def _convert_to_pil(img_data):
+    """A helper function to safely convert different image formats to a standard PIL Image."""
+    if img_data is None:
+        return None
+    try:
+        if isinstance(img_data, np.ndarray):
+            # Convert numpy array (e.g., from OpenCV or a model mask) to PIL Image
+            if img_data.max() <= 1.0: # Handle normalized masks
+                img_data = (img_data * 255)
+            return PILImage.fromarray(img_data.astype(np.uint8)).convert("RGB")
+        if isinstance(img_data, PILImage.Image):
+            # Ensure image is in a standard RGB format
+            return img_data.convert("RGB")
+        
+        logger.warning(f"Unsupported image type for report: {type(img_data)}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to process image data for report: {e}")
+        return None
 
-    document = []
-    document.append(Spacer(1, 20))
-    document.append(Paragraph(title, ParagraphStyle(name='Title',
-                                                fontFamily='Georgia',
-                                                fontSize=28,
-                                                alignment=TA_CENTER)))
-
-    document.append(Spacer(1, 30))
-    # make the PDF responive while PDF generation, to be implemented later
-    document.append(Image(image, 8*inch, 6*inch))
-    # report details to be added
-
-    # save in dir or return file
-    SimpleDocTemplate(f'reports/{username}_{title}.pdf',pagesize=letter,
-                    rightMargin=12, leftMargin=12,
-                    topMargin=12, bottomMargin=6).build(document)
+def generate_report(title, model_output_img, username, xai_img=None):
+    """
+    Generates a PDF report in memory containing model outputs and optional XAI visualizations.
+    """
+    logger.debug(f"Generating report for {username} - {title}")
     
-def generate_complete_report():
-    if not os.path.exists(os.path.join(settings.BASE_DIR, 'reports')):
-        os.makedirs('reports')
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+    story = []
+    temp_files = []
+
+    try:
+        # A list of images and their titles to add to the PDF
+        images_to_add = [
+            ("Model Output", model_output_img),
+            ("XAI Explanation", xai_img)
+        ]
+
+        for img_title, img_data in images_to_add:
+            if img_data is None:
+                continue
+            
+            pil_img = _convert_to_pil(img_data)
+            if not pil_img:
+                continue
+
+            # Create a temporary file to hold the image for the PDF library
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                pil_img.save(temp_file, format='PNG')
+                temp_files.append(temp_file.name)
+                
+                # Add the title and image to the PDF story
+                story.append(Paragraph(img_title, ParagraphStyle(name='Title', fontSize=16, spaceAfter=10)))
+                story.append(RLImage(temp_file.name, width=6*inch, height=4.5*inch, kind='proportional'))
+                story.append(Spacer(1, 0.25*inch))
+
+        if not story:
+            logger.error("No valid content could be generated for the PDF report.")
+            return None, None
+
+        # Build the PDF from the story
+        doc.build(story)
+        
+        filename = f'{username}_{title}_{timezone.now().strftime("%Y%m%d%H%M%S")}.pdf'
+        pdf_buffer.seek(0)
+        return pdf_buffer, filename
+
+    except Exception as e:
+        logger.error(f"Failed to build the PDF document: {e}")
+        return None, None
+    finally:
+        # CRITICAL: Ensure all temporary files are deleted, even if errors occurred.
+        for f in temp_files:
+            try:
+                os.remove(f)
+            except Exception as e:
+                logger.error(f"Failed to clean up temporary file {f}: {e}")
+
