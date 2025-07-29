@@ -48,7 +48,9 @@ function Login() {
         const role = response.data.role;
         const roles = response.data.roles;
         const token = response.data.token;
-        dispatch(addLogedUser({ username, phone_number, role, roles, email: username, password, token, isActive: true }));
+        const userObj = { username, phone_number, role, roles, email: username, password, token, isActive: true };
+        console.log('Logged in user:', userObj);
+        dispatch(addLogedUser(userObj));
         setPassword("");
         setUsername("");
         toast.success("Logged In Successfully", {

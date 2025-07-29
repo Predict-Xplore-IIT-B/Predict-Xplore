@@ -23,8 +23,9 @@ function ModelProceed() {
   const [imgUpload, setImgUpload] = useState(false);
   const [runInstance, setRunInstance] = useState(false);
 
-  const allClasses = ["class 1", "class 2", "class 3", "class 4"];
-  const algorithms = ["Algorithm 1", "Algorithm 2", "Algorithm 3", "Algorithm 4"];
+  const allClasses = ["forest"];
+  const algorithms = ["gradcam"];
+  const [testCaseId, setTestCaseId] = useState(null);
 
   const toggleModel = (model) => {
     dispatch(toggleModelToRun(model.id));
@@ -41,14 +42,23 @@ function ModelProceed() {
     setImgUpload(true);
 
     try {
+      const token = user?.token;
       const imgResponse = await axios.post(
         "http://127.0.0.1:8000/model/instance/upload",
         formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            "Authorization": `Token ${token}`,
+          },
+        }
       );
 
-      if (imgResponse.status === 200) {
+      if (imgResponse.status === 201 && imgResponse.data?.test_case_id) {
+        setTestCaseId(imgResponse.data.test_case_id);
         toast.success("Image uploaded successfully", { autoClose: 2000 });
+      } else {
+        toast.error("Unexpected response: " + imgResponse.status, { autoClose: 2000 });
       }
     } catch (e) {
       toast.error("Error in uploading image", { autoClose: 2000 });
@@ -61,17 +71,31 @@ function ModelProceed() {
     setRunInstance(true);
     setImageSrcs([]);
 
+    if (!testCaseId) {
+      toast.error("No test_case_id found. Please upload an image first.", { autoClose: 2000 });
+      setRunInstance(false);
+      return;
+    }
+
     for (const model of toRunModels) {
       const data = {
-        username: user.username,
+        test_case_id: Number(testCaseId),
         models: [model.name],
+        xai_algo: "gradcam",
+        target_class: "forest",
       };
 
       try {
+        const token = user?.token;
         const response = await axios.post(
           "http://127.0.0.1:8000/model/instance/predict",
           data,
-          { headers: { "Content-Type": "application/json" } }
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Token ${token}`,
+            },
+          }
         );
 
         if (response.status === 200) {
