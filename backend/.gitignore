@@ -6,7 +6,6 @@ __pycache__/
 env/
 rush/
 .venv/
-*token.json
 *.whl
 Xplore/media/
 *credentials.json
