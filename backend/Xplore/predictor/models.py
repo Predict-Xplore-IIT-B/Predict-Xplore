@@ -20,7 +20,7 @@ class Model(models.Model):
     model_type = models.CharField(
         max_length=50, null=False, blank=False, choices=MODEL_TYPES, help_text="Type of the model (e.g., image segmentation, object detection)"
     )
-    model_image = models.ImageField(upload_to='model_images/', help_text="Image of the model", null=True, blank=True)
+    model_thumbnail = models.ImageField(upload_to='model_images/', help_text="Image of the model", null=True, blank=True)
     allowed_xai_models = models.JSONField(default=list, help_text="List of allowed XAI models for this model", null=True, blank=True)
     classes = models.JSONField(default=list, help_text="List of allowed target classes for the model", null=True, blank=True)
     allowed_users = models.JSONField(default=list, help_text="List of allowed user types for this model", null=True, blank=True)
