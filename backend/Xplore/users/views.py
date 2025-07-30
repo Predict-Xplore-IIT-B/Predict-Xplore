@@ -20,8 +20,6 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.exceptions import NotFound
 from dotenv import load_dotenv
 from rest_framework.parsers import JSONParser
-from utils.gmail_api import send_gmail
-
 
 load_dotenv()
 
@@ -53,14 +51,19 @@ subject_login = "Predict Xplore - Login OTP"
 def send_otp(username, email, subject, body):
     otp = random.randint(10000, 99999)
     try:
-        body_filled = body.format(username, otp, OTP_DURATION)
-        send_gmail(email, subject, body_filled)
+        send_mail(
+            subject,
+            body.format(username, otp, OTP_DURATION),
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
     except Exception as e:
-        print(f"[WARNING] Gmail API send_otp failed: {e}")
+        # log the exception and re-raise as a DRF error
+        print(f"[WARNING] send_otp failed: {e}")
         from rest_framework.exceptions import APIException
-        raise APIException("Could not send verification email using Gmail API.")
+        raise APIException("Could not send verification email. Check server logs.")
     return otp
-
 
 class CheckTokenValidity(APIView):
     def post(self, request):
