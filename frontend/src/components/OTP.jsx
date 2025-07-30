@@ -50,6 +50,10 @@ function OTP() {
       }
 
       if (response.status === 200) {
+        // If backend returns a token, update it in Redux
+        if (response.data.token) {
+          dispatch(updateUserStatus({ username: user.username, token: response.data.token, isActive: true }));
+        }
         toast.success("OTP verified successfully", {
           autoClose: 2000,
           onClose: () => {

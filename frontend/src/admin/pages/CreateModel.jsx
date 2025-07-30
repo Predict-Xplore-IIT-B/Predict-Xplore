@@ -34,12 +34,13 @@ function CreateModel() {
 
 
   const handleUpload = async () => {
-    if (!user) {
-      alert("User not found!");
+    if (!user || !user.token) {
+      alert("User or session token not found!");
       return;
     }
 
     const username = user.username;
+    const token = user.token;
 
     console.log("Uploading model with details:", {
       name,
@@ -63,11 +64,17 @@ function CreateModel() {
     formData.append("model_file", modelFile);
     formData.append("model_image", modelImage);
     formData.append("model_type", modelType);
-    formData.append("created_by", username); // ✅ use directly
+    formData.append("created_by", username);
+    // Add selected classes and roles as JSON strings
+    formData.append("classes", JSON.stringify(selectedClass));
+    formData.append("roles", JSON.stringify(selectedRoles));
 
     try {
       const response = await axios.post("http://127.0.0.1:8000/model/create", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+          "Content-Type": "multipart/form-data",
+          "Authorization": `Token ${token}`,
+        },
       });
       console.log("Upload success:", response.data);
       toast.success("Model successfully uploaded!", { autoClose: 2000 });

@@ -4,10 +4,9 @@
 venv/
 __pycache__/
 env/
-Xplore/models_weights/*
-Xplore/model_images/*
-Xplore/reports/*
 rush/
 .venv/
-credentials.json
-token.json
+*token.json
+*.whl
+Xplore/media/
+*credentials.json
