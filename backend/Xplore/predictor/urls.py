@@ -6,10 +6,10 @@ from .views import (
     pipeline_list,
     create_pipeline,
     home,
-    FetchInferenceImage,
     ReportDownloadView,
     CreateModelView,
     UploadModelView,
+    ModelOutputView,
 )
 
 urlpatterns = [
@@ -19,7 +19,7 @@ urlpatterns = [
     path('pipelines/', pipeline_list, name='pipeline-list'),
     path('pipelines/create/', create_pipeline, name='pipeline-create'),
     path('home/', home, name='home'),  # Home page for the API
-    path('output/<str:username>/<str:model_name>', FetchInferenceImage.as_view(), name='fetch-inference-image'),
+    path('output/<str:username>/<str:model_name>/', ModelOutputView.as_view(), name='model-output'),
     path('download/report/<int:report_id>', ReportDownloadView.as_view(), name='download-report'),
     path('create-model/', CreateModelView.as_view(), name='create-model'),  # For creating models
     path('create', UploadModelView.as_view()),

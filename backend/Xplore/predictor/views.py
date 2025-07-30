@@ -32,11 +32,11 @@ from predictor.models import Model
 from utils.xai import generate_cam
 import matplotlib
 import tempfile
-import logging
 from django.core.files.base import ContentFile
 from .models import TestCase, Report 
 from django.utils import timezone
 from utils.xai import generate_cam, generate_detection_cam
+import shutil
 
 
 # Configure matplotlib to use a non-interactive backend
@@ -92,9 +92,9 @@ class UploadModelView(APIView):
             model_file = request.data.get('model_file')
             created_by = request.data.get('created_by')
             model_type = request.data.get('model_type')
-            model_image = request.data.get('model_image')
+            model_thumbnail = request.data.get('model_image')  # <-- renamed
 
-            if not all([name, description, model_file, created_by, model_type, model_image]):
+            if not all([name, description, model_file, created_by, model_type, model_thumbnail]):
                 return Response({'error': 'All fields are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
             new_model = Model.objects.create(
@@ -103,7 +103,7 @@ class UploadModelView(APIView):
                 model_file=model_file,
                 created_by=User.objects.get(username=created_by),
                 model_type=model_type,
-                model_image=model_image,
+                model_thumbnail=model_thumbnail,  # <-- renamed
                 created_at=timezone.now()
             )
 
@@ -247,7 +247,11 @@ class PredictView(APIView):
                             # If mask is larger, crop it to fit the padded image
                             model_output_image = model_output_image[:padded_h, :padded_w]
 
-                        target_layers = [loaded_model.decoder.blocks[4].conv1[0]]
+                        target_layers = [
+                                loaded_model.decoder.blocks[2],
+                                loaded_model.decoder.blocks[3],
+                                loaded_model.decoder.blocks[4]
+                        ]
                         xai_output_image = generate_cam(
                             model=loaded_model, rgb_img=rgb_image_for_xai_padded, model_output_mask=model_output_image,
                             target_layers=target_layers, target_category_name=target_class,
@@ -279,7 +283,11 @@ class PredictView(APIView):
 
                         cam_model = ModelWrapper(loaded_model.model)
 
-                        target_layers = [loaded_model.model.model[9]] 
+                        target_layers = [
+                            loaded_model.model.model[4],
+                            loaded_model.model.model[6],
+                            loaded_model.model.model[8]
+                        ] 
                         
                         # --- Enable gradients for Grad-CAM ---
                         with torch.set_grad_enabled(True):
@@ -287,6 +295,30 @@ class PredictView(APIView):
                                 model=cam_model, input_tensor=input_tensor,
                                 target_layers=target_layers, rgb_img=rgb_img_float
                             )
+
+                # --- Save model output image to model_output folder ---
+                output_dir = os.path.join(settings.MEDIA_ROOT, "model_output")
+                os.makedirs(output_dir, exist_ok=True)
+                output_filename = f"{request.user.username}_{model_name}.png"
+                output_path = os.path.join(output_dir, output_filename)
+                img_to_save = None
+                if isinstance(model_output_image, np.ndarray):
+                    arr = np.squeeze(model_output_image)
+                    # Always apply a color map for segmentation masks
+                    if arr.ndim == 2:
+                        arr = arr.astype(np.uint8)
+                        import matplotlib.cm as cm
+                        # Use a color map for all classes, not just binary
+                        normed = arr / (arr.max() if arr.max() > 0 else 1)
+                        arr_rgb = (cm.get_cmap('jet')(normed)[:, :, :3] * 255).astype(np.uint8)
+                        img_to_save = Image.fromarray(arr_rgb)
+                    elif arr.ndim == 3 and arr.shape[2] in [1, 3]:
+                        arr = arr.astype(np.uint8)
+                        img_to_save = Image.fromarray(arr)
+                elif isinstance(model_output_image, Image.Image):
+                    img_to_save = model_output_image
+                if img_to_save:
+                    img_to_save.save(output_path, format="PNG")
 
                 pdf_buffer, report_filename = generate_report(
                     title=model_name, model_output_img=model_output_image,
@@ -323,7 +355,7 @@ class CreateModelView(APIView):
             description = data.get('description')
             model_type = data.get('model_type')
             file_data = data.get('model_file')
-            model_image = data.get('model_image')
+            model_thumbnail = data.get('model_image')  # <-- renamed
             allowed_xai_models = data.get('allowed_xai_models')
             classes = data.get('classes')
             allowed_users = data.get('allowed_users')
@@ -334,17 +366,17 @@ class CreateModelView(APIView):
             if isinstance(file_data, str):
                 file_content = base64.b64decode(file_data)
 
-            if model_image and isinstance(model_image, str):
-                model_image_content = base64.b64decode(model_image)
+            if model_thumbnail and isinstance(model_thumbnail, str):
+                model_thumbnail_content = base64.b64decode(model_thumbnail)
             else:
-                model_image_content = None
+                model_thumbnail_content = None
 
             new_object = Model.objects.create(
                 name=name,
                 description=description,
                 model_file=file_content,
                 model_type=model_type,
-                model_image=model_image_content,
+                model_thumbnail=model_thumbnail_content,  # <-- renamed
                 allowed_xai_models=allowed_xai_models or [],
                 classes=classes or [],
                 allowed_users=allowed_users or [],
@@ -428,3 +460,21 @@ class ReportDownloadView(APIView):
         
         # Serve the file from the FileField
         return FileResponse(report.report_file, as_attachment=True, filename=report.report_file.name)
+
+from django.views import View
+from django.http import FileResponse, Http404
+
+class ModelOutputView(APIView):
+    """
+    GET /model/output/<username>/<model_name>
+    Returns the model output image for the given user and model.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, username, model_name, *args, **kwargs):
+        output_dir = os.path.join(settings.MEDIA_ROOT, "model_output")
+        output_filename = f"{username}_{model_name}.png"
+        output_path = os.path.join(output_dir, output_filename)
+        if not os.path.exists(output_path):
+            return Response({"error": "Model output image not found."}, status=404)
+        return FileResponse(open(output_path, "rb"), content_type="image/png")

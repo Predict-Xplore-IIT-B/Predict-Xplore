@@ -16,10 +16,14 @@ urlpatterns = [
 
     # Predictor app (inference, models, etc.)
     path('model/', include('predictor.urls')),
+
+    # Remove this line:
+    # path('model/output/<str:username>/<str:model_name>/', ModelOutputView.as_view(), name='model-output'),
 ]
 
 # --- ADD THIS SNIPPET AT THE END OF THE FILE ---
 # This line tells Django's development server how to find and serve the images
 # you upload. It is the standard and required way to handle media files.
 if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

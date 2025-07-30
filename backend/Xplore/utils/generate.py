@@ -23,7 +23,17 @@ def _convert_to_pil(img_data):
             # Convert numpy array (e.g., from OpenCV or a model mask) to PIL Image
             if img_data.max() <= 1.0: # Handle normalized masks
                 img_data = (img_data * 255)
-            return PILImage.fromarray(img_data.astype(np.uint8)).convert("RGB")
+            arr = np.squeeze(img_data)
+            if arr.ndim == 2:
+                arr = arr.astype(np.uint8)
+                import matplotlib.cm as cm
+                normed = arr / (arr.max() if arr.max() > 0 else 1)
+                arr_rgb = (cm.get_cmap('jet')(normed)[:, :, :3] * 255).astype(np.uint8)
+                return PILImage.fromarray(arr_rgb)
+            if arr.ndim == 3 and arr.shape[2] in [1, 3]:
+                arr = arr.astype(np.uint8)
+                return PILImage.fromarray(arr)
+            return PILImage.fromarray(arr.astype(np.uint8)).convert("RGB")
         if isinstance(img_data, PILImage.Image):
             # Ensure image is in a standard RGB format
             return img_data.convert("RGB")
