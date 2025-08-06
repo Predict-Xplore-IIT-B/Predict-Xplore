@@ -41,6 +41,7 @@ export default function Report() {
                             key={index}
                             model_bullete={data.model_type}
                             model_img={modelImage}
+                            report_id={data.id}
                             model_name={data.name}
                             description={data.description}
                             username={user?.username || 'Guest'}
