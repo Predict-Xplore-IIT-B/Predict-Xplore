@@ -25,10 +25,26 @@ def _convert_to_pil(img_data):
                 img_data = (img_data * 255)
             arr = np.squeeze(img_data)
             if arr.ndim == 2:
+                # This is a segmentation mask - convert to RGB using colormap
                 arr = arr.astype(np.uint8)
+                
+                # Normalize the mask values to 0-1 range for colormap
+                if arr.max() > 0:
+                    # Scale class labels to use full colormap range
+                    unique_classes = np.unique(arr)
+                    if len(unique_classes) > 1:
+                        # Map class indices to evenly distributed colormap values
+                        arr_normalized = np.zeros_like(arr, dtype=np.float32)
+                        for i, class_val in enumerate(unique_classes):
+                            arr_normalized[arr == class_val] = i / (len(unique_classes) - 1)
+                    else:
+                        arr_normalized = arr.astype(np.float32)
+                else:
+                    arr_normalized = arr.astype(np.float32)
+                
                 import matplotlib.cm as cm
-                normed = arr / (arr.max() if arr.max() > 0 else 1)
-                arr_rgb = (cm.get_cmap('jet')(normed)[:, :, :3] * 255).astype(np.uint8)
+                # Use a more distinct colormap for segmentation
+                arr_rgb = (cm.get_cmap('tab20')(arr_normalized)[:, :, :3] * 255).astype(np.uint8)
                 return PILImage.fromarray(arr_rgb)
             if arr.ndim == 3 and arr.shape[2] in [1, 3]:
                 arr = arr.astype(np.uint8)

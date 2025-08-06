@@ -201,7 +201,20 @@ class PredictView(APIView):
                 model_output, loaded_model = result_tuple
 
                 if weight.model_type == 'ImageSegmentation':
-                    model_output_image = model_output[0] if isinstance(model_output, (list, tuple, np.ndarray)) else model_output
+                    model_output_image = model_output[0] if isinstance(model_output, (list, tuple)) else model_output
+                    
+                    # Debug: Print shape and unique values
+                    print(f"Segmentation mask shape: {model_output_image.shape}")
+                    print(f"Unique values in mask: {np.unique(model_output_image)}")
+                    print(f"Min: {model_output_image.min()}, Max: {model_output_image.max()}")
+                    
+                    # Ensure it's a proper segmentation mask
+                    if model_output_image.ndim == 2:
+                        # This is correct for segmentation masks
+                        pass
+                    elif model_output_image.ndim == 3 and model_output_image.shape[2] == 1:
+                        model_output_image = model_output_image.squeeze(2)
+                    
                     if xai_algo and target_class:
                         # --- Ensure classes are present and include 'forest' if missing ---
                         if not hasattr(weight, "classes") or not weight.classes or len(weight.classes) == 0:
@@ -452,14 +465,27 @@ class FetchInferenceImage(APIView):
 # views.py
 
 class ReportDownloadView(APIView):
+    permission_classes = [permissions.AllowAny]
     # permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, report_id):
-        # Fetch the report by its ID, ensuring the user has access
-        report = get_object_or_404(Report, pk=report_id, test_case__created_by=request.user)
-        
-        # Serve the file from the FileField
-        return FileResponse(report.report_file, as_attachment=True, filename=report.report_file.name)
+        try:
+            report = get_object_or_404(Report, pk=report_id)
+            
+            # Check if the report file exists
+            if not report.report_file:
+                return Response({"error": "Report file not found."}, status=404)
+            
+            return FileResponse(
+                report.report_file, 
+                as_attachment=True, 
+                filename=report.report_file.name
+            )
+        except Report.DoesNotExist:
+            return Response({"error": "Report not found."}, status=404)
+        except Exception as e:
+            logger.error(f"Error downloading report {report_id}: {e}")
+            return Response({"error": f"Error downloading report: {str(e)}"}, status=500)
 
 from django.views import View
 from django.http import FileResponse, Http404
