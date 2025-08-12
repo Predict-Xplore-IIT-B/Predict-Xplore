@@ -358,6 +358,17 @@ def model_list(request):
     models = Model.objects.values('id', 'name', 'description', 'model_type', 'created_at')
     return JsonResponse({"models": list(models)}, safe=False)
 
+def report_list(request):
+    reports = Report.objects.select_related('test_case__model').values(
+        'id', 
+        'test_case__id',
+        'test_case__model__name',
+        'test_case__model__model_type',
+        'report_file', 
+        'created_at'
+    )
+    return JsonResponse({"reports": list(reports)}, safe=False)
+
 class CreateModelView(APIView):
     def post(self, request, *args, **kwargs):
         content_type = request.content_type
@@ -467,10 +478,15 @@ class FetchInferenceImage(APIView):
 class ReportDownloadView(APIView):
     permission_classes = [permissions.AllowAny]
     # permission_classes = [permissions.IsAuthenticated]
-
+    print("ReportDownloadView called")
     def get(self, request, report_id):
         try:
             report = get_object_or_404(Report, pk=report_id)
+            filename = report.report_file.name
+            print(report.report_file)
+            print(report_id)
+            print("file downloading from", filename)
+
             
             # Check if the report file exists
             if not report.report_file:
