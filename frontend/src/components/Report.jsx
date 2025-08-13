@@ -16,12 +16,17 @@ export default function Report() {
         const fetchReportsData = async () => {
             setLoading(true);
             try {
-                const response = await axios.get('http://localhost:8000/model/report/');
+                const response = await axios.get('http://localhost:8000/model/report/');               
                 const reports = response.data.reports;
-
+                // console.log("reports:",reports);
+                
                 if (reports && Array.isArray(reports)) {
-                    setReportsData(reports);
-                    reports.forEach((report) => dispatch(addReport(report)));
+                     // Sort newest to oldest
+                    const sortedReports = [...reports].sort((a, b) => 
+                        new Date(b.created_at) - new Date(a.created_at)
+                    );
+                    setReportsData(sortedReports);
+                    sortedReports.forEach((report) => dispatch(addReport(report)));
                 } else {
                     console.error("Unexpected response structure:", response.data);
                 }
