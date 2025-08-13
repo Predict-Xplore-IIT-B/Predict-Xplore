@@ -106,3 +106,27 @@
     color: #666;
     font-size: 1.2rem;
 }
+
+.button-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* spacing between buttons */
+    align-items: stretch; /* makes buttons fill equal width */
+}
+
+.report-btn {
+    width: 100%;
+    padding: 10px 0;
+    background-color: #6966FF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s ease;
+}
+
+.report-btn:hover {
+    background-color: #5653cc;
+}

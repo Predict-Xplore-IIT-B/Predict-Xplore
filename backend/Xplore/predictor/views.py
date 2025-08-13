@@ -339,7 +339,7 @@ class PredictView(APIView):
                 )
 
                 if pdf_buffer:
-                    report_instance = Report.objects.create(test_case=test_case)
+                    report_instance = Report.objects.create(test_case=test_case, model=weight)
                     report_instance.report_file.save(report_filename, ContentFile(pdf_buffer.read()), save=True)
                     download_url = request.build_absolute_uri(f'/model/download/report/{report_instance.id}')
                     report_urls.append({"model_name": model_name, "download_url": download_url})
@@ -371,15 +371,33 @@ def model_list(request):
     return JsonResponse({"models": list(models)}, safe=False)
 
 def report_list(request):
-    reports = Report.objects.select_related('test_case__model').values(
-        'id', 
-        'test_case__id',
-        'test_case__model__name',
-        'test_case__model__model_type',
-        'report_file', 
-        'created_at'
-    )
-    return JsonResponse({"reports": list(reports)}, safe=False)
+    qs = Report.objects.select_related('model', 'test_case').order_by('-created_at')
+
+    data = []
+    for r in qs:
+        model_thumb_url = (
+            request.build_absolute_uri(r.model.model_thumbnail.url)
+            if (r.model and r.model.model_thumbnail) else None
+        )
+        data.append({
+            "id": r.id,
+            "created_at": r.created_at.isoformat(),
+
+            # report file paths/urls
+            "report_file": r.report_file.name if r.report_file else None,
+            "report_file_url": request.build_absolute_uri(r.report_file.url) if r.report_file else None,
+
+            # test case
+            "test_case__id": r.test_case_id,
+
+            # model details (directly from Report.model)
+            "model__id": r.model_id,
+            "model__name": r.model.name if r.model else None,
+            "model__model_type": r.model.model_type if r.model else None,
+            "model__model_thumbnail_url": model_thumb_url,
+        })
+
+    return JsonResponse({"reports": data})
 
 class CreateModelView(APIView):
     def post(self, request, *args, **kwargs):

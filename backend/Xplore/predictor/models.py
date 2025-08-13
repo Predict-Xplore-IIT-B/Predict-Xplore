@@ -64,12 +64,12 @@ class TestCase(models.Model):
         return f"Test Case {self.id} - Status: {self.status}"
 
 
+# models.py
 class Report(models.Model):
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, verbose_name="Test Case")
+    model = models.ForeignKey(Model, null=True, blank=True, on_delete=models.SET_NULL, verbose_name="Model Used")  # <-- NEW
     report_file = models.FileField(upload_to='reports/', help_text="Generated report file (PDF, etc.)")
-    xai_visualization = models.ImageField(upload_to='xai_visualizations/', help_text="XAI visual representation (e.g., saliency map)", null=True, blank=True)
-    bounding_boxes = models.JSONField(help_text="Coordinates of bounding boxes for object detection", null=True, blank=True)
+    xai_visualization = models.ImageField(upload_to='xai_visualizations/', null=True, blank=True)
+    bounding_boxes = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
 
-    def __str__(self):
-        return f"Report for Test Case {self.test_case.id}"
