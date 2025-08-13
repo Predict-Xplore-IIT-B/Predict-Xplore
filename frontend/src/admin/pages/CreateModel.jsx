@@ -149,7 +149,7 @@ function CreateModel() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
-                    <img src={upload} alt="Upload model image" className="h-20" />
+                    <img src={upload} alt="Upload model thumbnail image" className="h-20" />
                   )}
                 </div>
                 <input
@@ -162,7 +162,7 @@ function CreateModel() {
                   }}
                 />
               </label>
-              <p className="my-2 text-xl text-gray-500">Upload Model Image</p>
+              <p className="my-2 text-xl text-gray-500">Upload Model thumbnail Image</p>
             </div>
           </div>
         </div>

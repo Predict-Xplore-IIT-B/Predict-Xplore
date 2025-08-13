@@ -19,6 +19,7 @@ function ModelTest() {
         console.log("Retrieving data");
         try{
             const response = await axios.get('http://localhost:8000/model/list/');
+            // console.log("response:", response.data.models);
             setModels(response.data.models);
             response.data.models.map((i, index) => {
                 dispatch(addModelList(i))
@@ -64,7 +65,7 @@ function ModelTest() {
             <div className="model-test flex mx-2 w-[95%] p-6 justify-center flex-wrap">
                 {models.map((i, index)=>(
                     <div key={i.id}>
-                        <ModelTestSelection id = {i.id} name = {i.name} image = {i.model_image} desc = {i.description} index = {index}/>
+                        <ModelTestSelection id = {i.id} name = {i.name} image = {i.model_thumbnail} desc = {i.description} index = {index}/>
                     </div>
                 ))}
                 
