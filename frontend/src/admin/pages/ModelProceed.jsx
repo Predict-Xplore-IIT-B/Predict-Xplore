@@ -106,8 +106,14 @@ function ModelProceed() {
             );
             const imageURL = URL.createObjectURL(imageResponse.data);
             setImageSrcs((prev) => [...prev, { name: model.name, url: imageURL }]);
+            toast.success(`Prediction successful for model: ${model.name}`, { autoClose: 2000 });
+            toast.success(`Report generated for model: ${model.name}`, { autoClose: 5000 });
           } catch (error) {
             console.error(`Error fetching image for model ${model.name}:`, error);
+            toast.error(
+              error.response?.data?.error || `Failed to fetch test image for : ${model.name}`,
+              { autoClose: 2000 }
+            );
           }
         }
       } catch (error) {
