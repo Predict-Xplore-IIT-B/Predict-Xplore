@@ -52,20 +52,31 @@ export default function ReportComponent(props) {
         }
     };
 
+    const handleView = () => {
+        const url = `http://localhost:8000/media/${props.report_file}`;
+        window.open(url, "_blank", "noopener,noreferrer");
+    };
+
     return (
         <div className="card">
             <div className="model-head">
                 <div className="model-info">
                     <span className="model-name">{props.model_name}</span>
-                    {/* <span className="model-type">({props.model_type})</span> */}
-                    <span className="report-date">
-                        Created: {new Date(props.created_at).toLocaleDateString()}
+                    <span className="model-type">
+                    Model Type: <span style={{ color: "#6966FF" }}>{props.model_type}</span>
                     </span>
+                    {/* <span className="report-date">
+                        Created: {new Date(props.created_at).toLocaleDateString()}
+                    </span> */}
                 </div>
-                <button onClick={handleDownload}>Download Report</button>
+                <div className="button-column">
+                    <button className="report-btn" onClick={handleDownload}>Download Report</button>
+                    <button className="report-btn" onClick={handleView}>View Report</button>
+                </div>
+
             </div>
             <div className="model-desc">
-                <img src={props.model_img} alt={props.model_name} />
+                <img className='rounded-xl max-h-[30vh]' src={props.model_img} alt={props.model_name} />
                 <div className="report-details">
                     <p><strong>Test Case ID:</strong> {props.test_case_id}</p>
                     <p><strong>Report ID:</strong> {props.report_id}</p>

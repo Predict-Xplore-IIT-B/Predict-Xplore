@@ -18,7 +18,7 @@ export default function Report() {
             try {
                 const response = await axios.get('http://localhost:8000/model/report/');               
                 const reports = response.data.reports;
-                // console.log("reports:",reports);
+                console.log("reports:",reports);
                 
                 if (reports && Array.isArray(reports)) {
                      // Sort newest to oldest
@@ -41,8 +41,30 @@ export default function Report() {
     }, [dispatch]);
 
     const downloadAllReports = async () => {
-        // TODO: Implement bulk download functionality
-        console.log("Downloading all reports...");
+        if (!reportsData.length) {
+            alert("No reports to download.");
+            return;
+        }
+
+        for (const report of reportsData) {
+            const url = report.report_file_url; // assuming API gives this
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = url.split('/').pop(); // use filename from URL
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    console.error(`Failed to download ${url}`);
+                }
+            } catch (err) {
+                console.error(`Error downloading ${url}:`, err);
+            }
+        }
     };
 
     // Extract model name from report file name
@@ -81,18 +103,26 @@ export default function Report() {
                 {reportsData.length > 0 ? (
                     reportsData.map((report) => (
                         <ReportComponent
-                            key={report.id}
-                            report_id={report.id}
-                            test_case_id={report.test_case__id}
-                            model_name={extractModelName(report.report_file)}
-                            model_type={extractModelType(report.report_file)}
-                            model_bullete={extractModelType(report.report_file)}
-                            model_img={modelImage}
-                            report_file={report.report_file}
-                            created_at={report.created_at}
-                            description={`Report generated on ${new Date(report.created_at).toLocaleDateString()}`}
-                            username={user?.username || 'Guest'}
+                        key={report.id}
+                        report_id={report.id}
+                        test_case_id={report.test_case__id}
+                        model_name={report.model__name || extractModelName(report.report_file)}
+                        model_type={
+                            report.model__model_type
+                            ? ({
+                                HumanDetection: 'Human Detection',
+                                ObjectDetection: 'Object Detection',
+                                ImageSegmentation: 'Image Segmentation',
+                                }[report.model__model_type] || 'Unknown Type')
+                            : extractModelType(report.report_file)
+                        }
+                        model_img={report.model__model_thumbnail_url || modelImage}
+                        report_file={report.report_file}
+                        created_at={report.created_at}
+                        description={`Report generated on ${new Date(report.created_at).toLocaleDateString()}`}
+                        username={user?.username || 'Guest'}
                         />
+
                     ))
                 ) : (
                     <div className="no-reports">
