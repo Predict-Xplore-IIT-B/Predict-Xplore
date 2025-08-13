@@ -57,7 +57,7 @@ export default function ReportComponent(props) {
             <div className="model-head">
                 <div className="model-info">
                     <span className="model-name">{props.model_name}</span>
-                    <span className="model-type">({props.model_type})</span>
+                    {/* <span className="model-type">({props.model_type})</span> */}
                     <span className="report-date">
                         Created: {new Date(props.created_at).toLocaleDateString()}
                     </span>
