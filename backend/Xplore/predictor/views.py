@@ -355,7 +355,19 @@ def home(request):
     return JsonResponse({"message": "Welcome to the Dashboard API"})
 
 def model_list(request):
-    models = Model.objects.values('id', 'name', 'description', 'model_type', 'created_at')
+    models = Model.objects.values(
+        'id',
+        'name',
+        'description',
+        'model_file',
+        'created_by',      # will return the user id
+        'created_at',
+        'model_type',
+        'model_thumbnail',
+        'allowed_xai_models',
+        'classes',
+        # 'allowed_users'
+    )
     return JsonResponse({"models": list(models)}, safe=False)
 
 def report_list(request):

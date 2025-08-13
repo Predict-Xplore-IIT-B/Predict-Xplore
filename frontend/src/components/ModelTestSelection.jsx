@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { addModelList, updateModelSelection } from '../redux/reducers/modelSlice'
 
 function ModelTestSelection(props) {
-
+  // console.log("ModelTestSelection props:", props);
   const dispatch = useDispatch();
   
   const [select, setSelect] = useState(false)// modelArray[props.index].status
@@ -28,7 +28,11 @@ function ModelTestSelection(props) {
 
           {/* Model Image */}
           <div className="mb-1 object-contain">
-            <img className="rounded-xl max-h-[30vh]" src={props.image} alt="No Image" />
+            <img
+              className="rounded-xl max-h-[30vh]"
+              src={`http://localhost:8000/media/${props.image}`}
+              alt="No Image"
+            />
           </div>
 
         </div>
