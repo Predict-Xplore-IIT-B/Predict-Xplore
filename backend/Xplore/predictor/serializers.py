@@ -9,7 +9,7 @@ class ModelOptionsSerializer(serializers.Serializer):
     test_case_id = serializers.IntegerField()
     
     models = serializers.ListField(
-        child=serializers.CharField(),
+        child=serializers.IntegerField(),  
         allow_empty=True
     )
     xai_algo = serializers.CharField(

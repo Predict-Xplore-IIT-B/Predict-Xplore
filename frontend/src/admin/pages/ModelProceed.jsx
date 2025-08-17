@@ -80,7 +80,7 @@ function ModelProceed() {
     for (const model of toRunModels) {
       const data = {
         test_case_id: Number(testCaseId),
-        models: [model.name],
+        models: [model.id], 
         xai_algo: "gradcam",
         target_class: "forest",
       };

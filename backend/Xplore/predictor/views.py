@@ -163,7 +163,7 @@ class PredictView(APIView):
         
         validated_data = serializer.validated_data
         test_case_id = validated_data.get('test_case_id') 
-        selected_models = validated_data.get("models", [])
+        selected_models = validated_data.get("models", [])  # These should be IDs now
         xai_algo = validated_data.get("xai_algo")
         target_class = validated_data.get("target_class")
 
@@ -186,12 +186,17 @@ class PredictView(APIView):
             logger.error(f"Error reading image for TestCase {test_case_id}: {e}")
             return Response({'error': 'Failed to process the uploaded image.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        weights = [Model.objects.get(name=name) for name in selected_models]
+        try:
+            weights = [Model.objects.get(pk=model_id) for model_id in selected_models]
+        except Model.DoesNotExist as e:
+            return Response({'error': f'One or more models not found: {e}'}, status=status.HTTP_404_NOT_FOUND)
+        
         with concurrent.futures.ThreadPoolExecutor() as executor:
             inference_results = list(executor.map(run_inference_call, weights, [cv2_image]*len(weights)))
 
         report_urls = []
-        for weight, result_tuple, model_name in zip(weights, inference_results, selected_models):
+        for weight, result_tuple, model_id in zip(weights, inference_results, selected_models):
+            model_name = weight.name  
             if not result_tuple or result_tuple[0] is None:
                 logger.warning(f"Skipping report for model '{model_name}': empty inference result.")
                 continue
