@@ -7,5 +7,8 @@ env/
 Xplore/models_weights/*
 Xplore/model_images/*
 Xplore/reports/*
+Xplore/inputs/*
+Xplore/outputs/*
 rush/
 .venv/
+PipelineOutputs
