@@ -1,7 +1,13 @@
+import csv
+from datetime import datetime
 import os
 import io
 import json
 import concurrent.futures
+import shutil
+import subprocess
+import uuid
+import zipfile
 import numpy as np
 import base64
 import torch
@@ -21,7 +27,7 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from rest_framework.views import APIView
 from .serializers import ModelOptionsSerializer
-from .models import Model, Pipeline
+from .models import Model, Pipeline, Container
 from .serializers import ModelOptionsSerializer, ModelSerializer
 from Architecture.architecture import load_image_segmentation
 from utils.inference import image_segmentation
@@ -185,6 +191,67 @@ class PredictView(APIView):
             return HttpResponse("Inference Successful", status=200)
 
         return HttpResponse("Invalid data", status=400)
+    
+class PredictPipeline(APIView):
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        if not User.objects.filter(username=username).exists():
+            return Response({'error': 'User not found.'}, status=404)
+
+        
+        b64 = uploaded_image.session_test_image
+        if not b64:
+            return HttpResponse("Please upload first.", status=400)
+        data = base64.b64decode(b64)
+        arr  = np.frombuffer(data, dtype=np.uint8)
+        temp_image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if temp_image is None:
+            return HttpResponse("Failed to decode.", status=400)
+
+        selected = ['HumanDetection','Segmentation','HumanDetection']  
+        weights  = [Model.objects.get(name=m) for m in selected]
+
+        for name, weight in zip(selected, weights):
+            pred = run_inference_call(weight, temp_image)
+
+            
+            if weight.model_type == 'ImageSegmentation':
+                out_img = self.mask_to_cv2(pred)
+            else:
+                out_img = pred.plot()
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"{name}_{ts}.png"
+            save_path = os.path.join(
+                "E:/External_Projects/Predict-Xplore/PipelineOutputs",
+                fname
+            )
+            if out_img.ndim == 4:
+                out_img = np.squeeze(out_img)
+            cv2.imwrite(save_path, out_img)
+
+            
+            pil = Image.fromarray(out_img[:, :, ::-1])  
+            buf = BytesIO()
+            pil.save(buf, format="PNG")
+            buf.seek(0)
+            uploaded_image.encoded_image[f"{username}_{name}"] = base64.b64encode(buf.getvalue()).decode()
+
+            
+            temp_image = out_img
+        plt.imshow(temp_image)
+
+        return HttpResponse("Pipeline inference successful", status=200)
+
+    
+    def mask_to_cv2(self, mask):
+        
+        num_classes=mask.max() + 1
+        colors = cmap = plt.get_cmap('tab20', num_classes)  # or 'nipy_spectral', 'gist_ncar'
+        colors = (cmap(np.arange(num_classes))[:, :3] * 255).astype(np.uint8) 
+        color_mask = colors[mask]
+        return color_mask[..., ::-1] 
+
 
 def home(request):
     return JsonResponse({"message": "Welcome to the Dashboard API"})
@@ -244,15 +311,26 @@ def create_pipeline(request):
             data = json.loads(request.body)
             pipeline_name = data.get('name')
             is_active = data.get('is_active', True)
+            allowed_models = data.get('allowed_models', [])
+            created_by_username = data.get('created_by')
+
+            created_by = User.objects.get(username=created_by_username)
 
             if not pipeline_name:
                 return JsonResponse({"message": "Missing required fields"}, status=400)
 
+
             pipeline_instance = Pipeline.objects.create(
                 name=pipeline_name,
+                created_by=created_by, 
                 is_active=is_active,
+                allowed_models=allowed_models
             )
-            return JsonResponse({"message": "Pipeline created successfully", "pipeline_id": pipeline_instance.id}, status=201)
+
+            return JsonResponse({
+                "message": "Pipeline created successfully",
+                "pipeline_id": pipeline_instance.id
+            }, status=201)
 
         except json.JSONDecodeError:
             return JsonResponse({"message": "Invalid JSON data"}, status=400)
@@ -304,3 +382,159 @@ class ReportDownloadView(APIView):
         if os.path.exists(report_path):
             return FileResponse(open(report_path, 'rb'), content_type='application/pdf', filename=f'{filename}.pdf')
         return Response({'error': 'Report does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+
+class CreateContainer(APIView):
+    def post(self, request, *args, **kwargs):
+
+        data = request.data
+        name = data.get('name')
+        description = data.get('description')
+        allowed_users = data.get('allowed_users', [])
+        upload_dir = f"/app/uploads/{name}/"
+
+        if not self.FileHandler(request, name):
+            return JsonResponse({"error": "Error in folder processing"}, status=400)
+
+        if not self.buildContainer(name):
+            self.clearDir(upload_dir)
+            return JsonResponse({"error": "Error in Building Container"}, status=400)
+        
+        user = request.user if request.user.is_authenticated else User.objects.first()
+
+        container = Container.objects.create(
+            name=name,
+            description=description,
+            allowed_users=allowed_users,
+            created_by=user
+        )
+        return Response({"detail": "Container created successfully."}, status=status.HTTP_201_CREATED)
+
+    def FileHandler(self, request, name):
+        try:
+            upload_dir = f"/app/uploads/{name}/"
+            os.makedirs(upload_dir, exist_ok=True)
+
+            if "zipfile" not in request.FILES:
+                print("Zip file not provided")
+                return False
+
+            zip_file = request.FILES["zipfile"]
+            zip_path = os.path.join(upload_dir, f"{name}.zip")
+
+            # Save the uploaded zip
+            with open(zip_path, "wb+") as f:
+                for chunk in zip_file.chunks():
+                    f.write(chunk)
+
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                
+                members = [m for m in zip_ref.namelist() if not m.endswith("/")]
+                root_folders = set(m.split("/")[0] for m in members)
+
+                if len(root_folders) == 1:
+                    
+                    root = list(root_folders)[0]
+                    for member in members:
+
+                        target_path = os.path.join(upload_dir, member[len(root)+1:])
+                        if member.endswith("/"):
+                            os.makedirs(target_path, exist_ok=True)
+                        else:
+                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                            with open(target_path, "wb") as f:
+                                f.write(zip_ref.read(member))
+                else:
+                    
+                    zip_ref.extractall(upload_dir)
+            
+            
+            print("Extracted files:", os.listdir(upload_dir))
+
+
+            required_files = ["inference.py", "requirements.txt", "model.pth", "Dockerfile"]
+            for rf in required_files:
+                if not os.path.exists(os.path.join(upload_dir, rf)):
+                    print(f"Missing {rf} in uploaded zip")
+                    return False
+
+            return True
+        except Exception as e:
+            print(f"Exception in FileHandler: {e}")
+            return False
+        
+    def clearDir(self, dir):
+        for filename in os.listdir(dir):
+                file_path = os.path.join(dir, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+    def buildContainer(self, name):
+        image_name = f"user_{name}:latest"
+        upload_dir = f"/app/uploads/{name}/"
+        try:
+            subprocess.run(["docker", "build", "-t", image_name, upload_dir], check=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Docker build failed: {e}")
+            return False
+        finally:
+            self.clearDir(upload_dir)
+
+
+class RunContainer(APIView):
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        image_name = request.data.get('image_name')
+
+        job_id = str(uuid.uuid4())
+        
+        # Use absolute paths that exist on host
+        input_dir = os.path.abspath(f"./inputs/{job_id}/")  
+        output_dir = os.path.abspath(f"./outputs/{job_id}/")
+        
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save the video file
+        video_filename = request.FILES['video'].name.replace(' ', '_')
+        video_path = os.path.join(input_dir, video_filename)
+        
+        with open(video_path, "wb+") as f:
+            for chunk in request.FILES['video'].chunks():
+                f.write(chunk)
+
+        print(f"Video saved to: {video_path}")
+        print(f"File size: {os.path.getsize(video_path)} bytes")
+        print(f"Directory contents: {os.listdir(input_dir)}")
+
+        # Run container
+        try:
+            result = subprocess.run([
+                "docker", "run", "--rm",
+                "-v", f"{input_dir}:/app/inputs",
+                "-v", f"{output_dir}:/app/outputs",
+                image_name,
+                "python", "inference.py", f"/app/inputs/{video_filename}"
+            ], capture_output=True, text=True, check=True)
+            
+            print("Container output:", result.stdout)
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Container failed: {e}")
+            print(f"stdout: {e.stdout}")
+            print(f"stderr: {e.stderr}")
+            return Response({'error': 'Container execution failed'}, status=500)
+
+        # Check for results
+        results_csv = os.path.join(output_dir, "results.csv")
+        if os.path.exists(results_csv):
+            return Response({'detail': 'Inference complete', 'results_file': results_csv}, status=200)
+        else:
+            return Response({'error': 'No results generated'}, status=500)
+
+            

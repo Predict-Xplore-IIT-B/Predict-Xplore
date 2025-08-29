@@ -10,6 +10,9 @@ from .views import (
     ReportDownloadView,
     CreateModelView,
     UploadModelView,
+    PredictPipeline,
+    CreateContainer,
+    RunContainer
 )
 
 urlpatterns = [
@@ -17,6 +20,7 @@ urlpatterns = [
     path('instance/predict', PredictView.as_view(), name='predict-instance'),
     path('list/', model_list, name='model-list'),
     path('pipelines/', pipeline_list, name='pipeline-list'),
+    path('pipelines/predict', PredictPipeline.as_view(), name='predict-pipeline'),
     path('pipelines/create/', create_pipeline, name='pipeline-create'),
     path('home/', home, name='home'),  # Home page for the API
     path('output/<str:username>/<str:model_name>', FetchInferenceImage.as_view(), name='fetch-inference-image'),
@@ -26,4 +30,6 @@ urlpatterns = [
     path('output/<str:username>/<str:model_name>', FetchInferenceImage.as_view()),
     path('download/report/<str:filename>', ReportDownloadView.as_view()),
     path('create',UploadModelView.as_view()),
+    path('create-container/', CreateContainer.as_view(), name='create-container'),
+    path('run-container/', RunContainer.as_view(), name='run-container'),
 ]
