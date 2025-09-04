@@ -12,3 +12,6 @@ Xplore/outputs/*
 rush/
 .venv/
 PipelineOutputs
+
+Xplore/utils/credentials.json
+Xplore/utils/token.json
