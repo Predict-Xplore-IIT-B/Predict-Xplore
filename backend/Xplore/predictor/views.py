@@ -383,6 +383,11 @@ class ReportDownloadView(APIView):
             return FileResponse(open(report_path, 'rb'), content_type='application/pdf', filename=f'{filename}.pdf')
         return Response({'error': 'Report does not exist.'}, status=status.HTTP_404_NOT_FOUND)
 
+
+def container_list(request):
+    container = Container.objects.values('id', 'name', 'description', 'created_at')
+    return JsonResponse({"containers": list(container)}, safe=False)
+
 class CreateContainer(APIView):
     def post(self, request, *args, **kwargs):
 
@@ -391,6 +396,11 @@ class CreateContainer(APIView):
         description = data.get('description')
         allowed_users = data.get('allowed_users', [])
         upload_dir = f"/app/uploads/{name}/"
+
+        for container_name in Container.objects.values('name'):
+            if name == container_name['name']:
+                return JsonResponse({"error" : f"Model with name '{data.get('name')}' already exists"},status=400)
+
 
         if not self.FileHandler(request, name):
             return JsonResponse({"error": "Error in folder processing"}, status=400)
@@ -501,15 +511,15 @@ class RunContainer(APIView):
         os.makedirs(output_dir, exist_ok=True)
 
         # Save the video file
-        video_filename = request.FILES['video'].name.replace(' ', '_')
-        video_path = os.path.join(input_dir, video_filename)
+        test_file = request.FILES['test_file'].name.replace(' ', '_')
+        test_file_path = os.path.join(input_dir, test_file)
         
-        with open(video_path, "wb+") as f:
-            for chunk in request.FILES['video'].chunks():
+        with open(test_file_path, "wb+") as f:
+            for chunk in request.FILES['test_file'].chunks():
                 f.write(chunk)
 
-        print(f"Video saved to: {video_path}")
-        print(f"File size: {os.path.getsize(video_path)} bytes")
+        print(f"Test file saved to: {test_file_path}")
+        print(f"File size: {os.path.getsize(test_file_path)} bytes")
         print(f"Directory contents: {os.listdir(input_dir)}")
 
         # Run container
@@ -519,7 +529,7 @@ class RunContainer(APIView):
                 "-v", f"{input_dir}:/app/inputs",
                 "-v", f"{output_dir}:/app/outputs",
                 image_name,
-                "python", "inference.py", f"/app/inputs/{video_filename}"
+                "python", "inference.py", f"/app/inputs/{test_file}"
             ], capture_output=True, text=True, check=True)
             
             print("Container output:", result.stdout)

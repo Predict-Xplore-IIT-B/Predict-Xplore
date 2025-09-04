@@ -6,6 +6,7 @@ from .views import (
     pipeline_list,
     create_pipeline,
     home,
+    container_list,
     FetchInferenceImage,
     ReportDownloadView,
     CreateModelView,
@@ -32,4 +33,5 @@ urlpatterns = [
     path('create',UploadModelView.as_view()),
     path('create-container/', CreateContainer.as_view(), name='create-container'),
     path('run-container/', RunContainer.as_view(), name='run-container'),
+    path('list-container/', container_list, name='list-container'),
 ]
