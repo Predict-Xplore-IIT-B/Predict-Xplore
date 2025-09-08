@@ -56,14 +56,16 @@ INSTALLED_APPS = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
     #'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -192,3 +194,19 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ["EMAIL_ID"] # email address
 EMAIL_HOST_PASSWORD = os.environ["EMAIL_PASS"] # password
 DEFAULT_FROM_EMAIL = os.environ["EMAIL_ID"]
+
+# at the bottom of settings.py
+XAI_ALGOS = [
+   ("gradcam", "Grad‑CAM"),
+   ("scorecam", "Score‑CAM"),
+   ("eigengradcam", "EigenGrad‑CAM"),
+   ("ablationcam", "Ablation‑CAM"),
+   # etc.
+]
+# In Xplore/settings.py
+
+# ... (all your other settings)
+
+# --- ADD THESE TWO LINES AT THE END OF THE FILE ---
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
