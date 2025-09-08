@@ -73,3 +73,19 @@ class Report(models.Model):
     bounding_boxes = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created At")
 
+
+    def __str__(self):
+        return f"Report for Test Case {self.test_case.id}"
+
+
+class Container(models.Model):
+
+    name = models.CharField(max_length=255, help_text="Name of the machine learning model")
+    description = models.TextField(help_text="Description of the model")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, help_text="Admin who uploaded the model")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp of model creation")
+    allowed_users = models.JSONField(default=list, help_text="List of allowed user types for this model", null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
