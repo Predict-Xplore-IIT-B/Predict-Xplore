@@ -12,9 +12,6 @@ def load_image_segmentation():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
 
-    loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
     return model, device
 
 def load_human_detection(weight):

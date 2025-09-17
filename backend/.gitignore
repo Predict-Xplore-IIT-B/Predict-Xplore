@@ -1,11 +1,28 @@
-.env
+# Python
 *.pyc
 *.sqlite3
-venv/
 __pycache__/
+
+# Environments
 env/
-rush/
+venv/
 .venv/
+
+# Wheels
 *.whl
+
+# Project-specific ignores
+rush/
+PipelineOutputs
+
+# Xplore project data
 Xplore/media/
-*credentials.json
+Xplore/models_weights/*
+Xplore/model_images/*
+Xplore/reports/*
+Xplore/inputs/*
+Xplore/outputs/*
+
+# Credentials (never commit!)
+*credentials.
+*.env

@@ -17,7 +17,7 @@ from django.contrib.auth import authenticate, login
 from rest_framework.authtoken.models import Token
 from users.decorators import role_required
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, APIException
 from dotenv import load_dotenv
 from rest_framework.parsers import JSONParser
 
@@ -64,7 +64,7 @@ def send_otp(username, email, subject, body):
         from rest_framework.exceptions import APIException
         raise APIException("Could not send verification email. Check server logs.")
     return otp
-
+ 
 class CheckTokenValidity(APIView):
     def post(self, request):
         email = request.data.get('email')
