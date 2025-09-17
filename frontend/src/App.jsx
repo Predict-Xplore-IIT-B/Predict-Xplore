@@ -17,6 +17,7 @@ import AdminReport from './admin/pages/AdminReport';
 import AdminModelList from './admin/pages/AdminModelList';
 import { ToastContainer,Slide } from 'react-toastify';
 import ManageUser from './admin/pages/ManageUser';
+import ContainerTestRun from './components/ContainerTestRun';
 
 function App() {
   return (
@@ -35,7 +36,8 @@ function App() {
           <Route path="/model-test" element={<Modeltestpage />} />
           <Route path="/model-test-run" element={<Modeltestrunpage />} />
           <Route path="/reports" element={<Reportpage />} />
-
+          <Route path="/container-test-run" element={<ContainerTestRun/>} />
+          
           {/* Admin Pages */}
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/models" element={<AdminModelList />} />
