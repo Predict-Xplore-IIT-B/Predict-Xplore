@@ -12,6 +12,7 @@ from .views import (
     ReportDownloadView,
     CreateModelView,
     UploadModelView,
+    ModelOutputView,
     PredictPipeline,
     CreateContainer,
     RunContainer

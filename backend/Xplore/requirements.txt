@@ -9,10 +9,11 @@ social-auth-app-django
 # django-rest-knox
 
 # Machine Learning & XAI
+libs/grad_cam-1.5.5-py3-none-any.whl #Local wheel file for Grad-CAM
+
 albucore
 albumentations
 efficientnet-pytorch
-grad_cam @ file:libs/grad_cam-1.5.5-py3-none-any.whl
 matplotlib
 numpy>=1.23.0
 opencv-python-headless
@@ -60,7 +61,6 @@ pydantic_core
 pyparsing
 python-dateutil
 python-dotenv
-python-ldap @ file:///D:/Project%20Xplore/Predict-Xplore/backend/Xplore/python_ldap-3.4.4-cp311-cp311-win_amd64.whl
 pytz
 PyYAML
 reportlab
