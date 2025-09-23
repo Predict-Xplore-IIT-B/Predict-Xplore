@@ -4,6 +4,7 @@ import os
 import io
 import json
 import concurrent.futures
+from pathlib import Path
 import shutil
 import subprocess
 import uuid
@@ -388,6 +389,14 @@ def container_list(request):
     container = Container.objects.values('id', 'name', 'description', 'created_at')
     return JsonResponse({"containers": list(container)}, safe=False)
 
+def get_storage_path():
+
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parents[2] 
+    storage_path = project_root / "Container_storage"
+    
+    return storage_path
+
 class CreateContainer(APIView):
     def post(self, request, *args, **kwargs):
 
@@ -395,17 +404,19 @@ class CreateContainer(APIView):
         name = data.get('name')
         description = data.get('description')
         allowed_users = data.get('allowed_users', [])
-        upload_dir = f"/app/uploads/{name}/"
+        storage_base = get_storage_path()
+        upload_dir = storage_base / f"uploads/{name}/"
+        upload_dir.mkdir(parents=True, exist_ok=True)
 
         for container_name in Container.objects.values('name'):
             if name == container_name['name']:
                 return JsonResponse({"error" : f"Model with name '{data.get('name')}' already exists"},status=400)
 
 
-        if not self.FileHandler(request, name):
+        if not self.FileHandler(request, name, upload_dir):
             return JsonResponse({"error": "Error in folder processing"}, status=400)
 
-        if not self.buildContainer(name):
+        if not self.buildContainer(name, upload_dir):
             self.clearDir(upload_dir)
             return JsonResponse({"error": "Error in Building Container"}, status=400)
         
@@ -419,10 +430,8 @@ class CreateContainer(APIView):
         )
         return Response({"detail": "Container created successfully."}, status=status.HTTP_201_CREATED)
 
-    def FileHandler(self, request, name):
+    def FileHandler(self, request, name, upload_dir):
         try:
-            upload_dir = f"/app/uploads/{name}/"
-            os.makedirs(upload_dir, exist_ok=True)
 
             if "zipfile" not in request.FILES:
                 print("Zip file not provided")
@@ -483,9 +492,8 @@ class CreateContainer(APIView):
                 except Exception as e:
                     print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-    def buildContainer(self, name):
-        image_name = f"user_{name}:latest"
-        upload_dir = f"/app/uploads/{name}/"
+    def buildContainer(self, name, upload_dir):
+        image_name = f"{name}:latest"
         try:
             subprocess.run(["docker", "build", "-t", image_name, upload_dir], check=True)
             return True
