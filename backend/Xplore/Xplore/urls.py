@@ -13,7 +13,6 @@ urlpatterns = [
 
     # All auth & user-management routes live under /auth/
     path('auth/', include('users.urls')),
-
     # Predictor app (inference, models, etc.)
     path('model/', include('predictor.urls')),
 
