@@ -17,7 +17,7 @@ from django.contrib.auth import authenticate, login
 from rest_framework.authtoken.models import Token
 from users.decorators import role_required
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, APIException
 from dotenv import load_dotenv
 from rest_framework.parsers import JSONParser
 
@@ -50,7 +50,7 @@ subject_login = "Predict Xplore - Login OTP"
 
 def send_otp(username, email, subject, body):
     otp = random.randint(10000, 99999)
-    '''try:
+    try:
         send_mail(
             subject,
             body.format(username, otp, OTP_DURATION),
@@ -63,9 +63,8 @@ def send_otp(username, email, subject, body):
         print(f"[WARNING] send_otp failed: {e}")
         from rest_framework.exceptions import APIException
         raise APIException("Could not send verification email. Check server logs.")
-    return otp'''
-    return 10000
-
+    return otp
+ 
 class CheckTokenValidity(APIView):
     def post(self, request):
         email = request.data.get('email')
