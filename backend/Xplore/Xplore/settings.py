@@ -210,3 +210,4 @@ XAI_ALGOS = [
 # --- ADD THESE TWO LINES AT THE END OF THE FILE ---
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+ADDITIONAL_OUTPUTS_ROOT = os.path.join(BASE_DIR, 'outputs')

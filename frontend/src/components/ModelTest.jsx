@@ -42,7 +42,7 @@ function ModelTest() {
   }, []);
 
   // Proceed with Models
-  const proceedModels = () => {
+  const proceedModels = () => {   
     if (user?.role != null) {
       navigate("/admin/model-proceed");
     } else {
@@ -52,11 +52,7 @@ function ModelTest() {
 
   // Proceed with Containers
   const proceedContainers = () => {
-    if (user?.role != null) {
-      navigate("/admin/container-proceed");
-    } else {
-      navigate("/container-test-run");
-    }
+    navigate("/container-test-run");
   };
 
   return (
@@ -111,6 +107,7 @@ function ModelTest() {
                 image={c.thumbnail || null} 
                 desc={c.description} 
                 index={index}
+                selected={c.selected}
               />
             </div>
           ))}

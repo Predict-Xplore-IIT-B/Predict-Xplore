@@ -1,5 +1,6 @@
 # views.py
 import os
+import re
 import io
 import json
 import uuid
@@ -18,13 +19,14 @@ import cv2
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
+from pathlib import Path 
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.http import JsonResponse, HttpResponse, FileResponse
+from django.http import JsonResponse, HttpResponse, FileResponse, HttpResponseNotFound
 
 from rest_framework.views import APIView
 from rest_framework import status, permissions
@@ -44,6 +46,8 @@ from utils.inference import (
 )
 from utils.generate import generate_report
 from utils.xai import generate_cam, generate_detection_cam
+
+RANGE_RE = re.compile(r'bytes\s*=\s*(\d+)\s*-\s*(\d*)', re.I)
 
 # Configure matplotlib to use a non-interactive backend
 matplotlib.use('Agg')
@@ -810,11 +814,69 @@ class RunContainer(APIView):
             logger.debug(f"Container output: {result.stdout}")
 
         except subprocess.CalledProcessError as e:
-            logger.exception(f"Container failed: {e}\nstdout:{getattr(e, 'stdout', '')}\nstderr:{getattr(e, 'stderr', '')}")
-            return Response({'error': 'Container execution failed', 'stdout': getattr(e, 'stdout', ''), 'stderr': getattr(e, 'stderr', '')}, status=500)
+            logger.exception(
+                f"Container failed: {e}\nstdout:{getattr(e, 'stdout', '')}\nstderr:{getattr(e, 'stderr', '')}"
+            )
+            return Response({
+                'error': 'Container execution failed',
+                'stdout': getattr(e, 'stdout', ''),
+                'stderr': getattr(e, 'stderr', '')
+            }, status=500)
 
+        # Expected output files
         results_csv = os.path.join(output_dir, "results.csv")
+        video_file = os.path.join(output_dir, "output_live_feed.mp4")
+
+        response_data = {'detail': 'Inference complete'}
+
         if os.path.exists(results_csv):
-            return Response({'detail': 'Inference complete', 'results_file': results_csv}, status=200)
+            relative_csv = os.path.relpath(results_csv, settings.ADDITIONAL_OUTPUTS_ROOT)
+            response_data['results_file'] = f"/outputs/{relative_csv.replace(os.sep, '/')}"
         else:
-            return Response({'error': 'No results generated'}, status=500)
+            response_data['results_file'] = None
+
+        if os.path.exists(video_file):
+            response_data['video_file'] = f"/outputs/{job_id}/output_live_feed.mp4"
+        else:
+            response_data['video_file'] = None
+
+        return Response(response_data, status=200 if response_data['results_file'] else 500)
+    
+def stream_video(request, job_id, filename):
+    """
+    This view streams video files from the ADDITIONAL_OUTPUTS_ROOT 
+    and supports HTTP Range Requests.
+    """
+    # Use ADDITIONAL_OUTPUTS_ROOT from your settings
+    video_path = Path(settings.ADDITIONAL_OUTPUTS_ROOT) / str(job_id) / filename
+    
+    if not video_path.exists():
+        return HttpResponseNotFound("The requested video was not found.")
+
+    range_header = request.META.get('HTTP_RANGE', '').strip()
+    range_match = RANGE_RE.match(range_header)
+    
+    size = video_path.stat().st_size
+    content_type = 'video/mp4'
+    
+    if range_match:
+        first_byte, last_byte = range_match.groups()
+        first_byte = int(first_byte) if first_byte else 0
+        last_byte = int(last_byte) if last_byte else size - 1
+        if last_byte >= size:
+            last_byte = size - 1
+        length = last_byte - first_byte + 1
+        
+        response = FileResponse(video_path.open('rb'))
+        response['Content-Length'] = str(length)
+        response['Content-Range'] = f'bytes {first_byte}-{last_byte}/{size}'
+        response['Accept-Ranges'] = 'bytes'
+        response['Content-Type'] = content_type
+        response.status_code = 206 # Partial Content
+        return response
+    else:
+        response = FileResponse(video_path.open('rb'))
+        response['Content-Length'] = str(size)
+        response['Accept-Ranges'] = 'bytes'
+        response['Content-Type'] = content_type
+        return response

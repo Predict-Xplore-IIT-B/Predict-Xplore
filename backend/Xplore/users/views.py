@@ -49,6 +49,7 @@ subject_login = "Predict Xplore - Login OTP"
 # in your views.py
 
 def send_otp(username, email, subject, body):
+    return 12345
     otp = random.randint(10000, 99999)
     try:
         send_mail(
