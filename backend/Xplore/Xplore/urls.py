@@ -8,6 +8,8 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+from predictor.views import stream_video
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
@@ -25,5 +27,9 @@ urlpatterns = [
 # This line tells Django's development server how to find and serve the images
 # you upload. It is the standard and required way to handle media files.
 if settings.DEBUG:
+    import mimetypes
+    mimetypes.add_type("video/mp4", ".mp4", True)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += [
+        path('outputs/<uuid:job_id>/<str:filename>', stream_video, name='stream_video'),
+    ]

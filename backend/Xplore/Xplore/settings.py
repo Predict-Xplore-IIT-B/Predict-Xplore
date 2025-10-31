@@ -59,7 +59,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -210,3 +211,7 @@ XAI_ALGOS = [
 # --- ADD THESE TWO LINES AT THE END OF THE FILE ---
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+ADDITIONAL_OUTPUTS_ROOT = os.path.join(BASE_DIR, 'outputs')
+
+# Ensure the directory exists
+os.makedirs(ADDITIONAL_OUTPUTS_ROOT, exist_ok=True)

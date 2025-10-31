@@ -1,5 +1,6 @@
 # views.py
 import os
+import re
 import io
 import json
 import uuid
@@ -18,13 +19,14 @@ import cv2
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
+from pathlib import Path 
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.http import JsonResponse, HttpResponse, FileResponse
+from django.http import JsonResponse, HttpResponse, FileResponse, HttpResponseNotFound
 
 from rest_framework.views import APIView
 from rest_framework import status, permissions
@@ -44,6 +46,8 @@ from utils.inference import (
 )
 from utils.generate import generate_report
 from utils.xai import generate_cam, generate_detection_cam
+
+RANGE_RE = re.compile(r'bytes\s*=\s*(\d+)\s*-\s*(\d*)', re.I)
 
 # Configure matplotlib to use a non-interactive backend
 matplotlib.use('Agg')
@@ -680,11 +684,16 @@ class CreateContainer(APIView):
         name = data.get('name')
         description = data.get('description')
         allowed_users = data.get('allowed_users', [])
-        upload_dir = f"/app/uploads/{name}/"
+        upload_dir = os.path.join(settings.MEDIA_ROOT, 'containers')
 
         for container_name in Container.objects.values('name'):
             if name == container_name['name']:
                 return JsonResponse({"error": f"Model with name '{name}' already exists"}, status=400)
+
+        try:
+            os.makedirs(upload_dir, exist_ok=True)
+        except Exception as e:
+            return JsonResponse({"error": f"Failed to create upload directory: {str(e)}"}, status=500)
 
         if not self.FileHandler(request, name):
             return JsonResponse({"error": "Error in folder processing"}, status=400)
@@ -705,7 +714,7 @@ class CreateContainer(APIView):
 
     def FileHandler(self, request, name):
         try:
-            upload_dir = f"/app/uploads/{name}/"
+            upload_dir = os.path.join(settings.MEDIA_ROOT, 'containers', 'uploads', name)
             os.makedirs(upload_dir, exist_ok=True)
 
             if "zipfile" not in request.FILES:
@@ -721,28 +730,68 @@ class CreateContainer(APIView):
 
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 members = [m for m in zip_ref.namelist() if not m.endswith("/")]
-                root_folders = set(m.split("/")[0] for m in members)
+                
+                if not members:
+                    logger.error("Empty zip file")
+                    return False
+                
+                root_folders = set(m.split("/")[0] for m in members if "/" in m)
 
+                # Check if all files are in a single root folder
                 if len(root_folders) == 1:
                     root = list(root_folders)[0]
+                    logger.info(f"Detected single root folder: {root}")
+                    
                     for member in members:
-                        target_path = os.path.join(upload_dir, member[len(root) + 1:])
-                        if member.endswith("/"):
-                            os.makedirs(target_path, exist_ok=True)
+                        # Strip the root folder name
+                        if member.startswith(root + "/"):
+                            relative_path = member[len(root) + 1:]
                         else:
-                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                            with open(target_path, "wb") as f:
-                                f.write(zip_ref.read(member))
+                            relative_path = member
+                        
+                        if not relative_path:  # Skip if empty after stripping
+                            continue
+                        
+                        target_path = os.path.join(upload_dir, relative_path)
+                        
+                        # Create parent directories if needed
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        
+                        # Write the file
+                        with open(target_path, "wb") as f:
+                            f.write(zip_ref.read(member))
                 else:
+                    # Multiple root folders or files at root level
                     zip_ref.extractall(upload_dir)
 
-            required_files = ["inference.py", "requirements.txt", "model.pth", "Dockerfile"]
-            for rf in required_files:
-                if not os.path.exists(os.path.join(upload_dir, rf)):
-                    logger.error(f"Missing {rf} in uploaded zip")
-                    return False
+            # Remove the zip file after extraction
+            try:
+                os.remove(zip_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove zip file: {e}")
 
+            # Validate required files
+            required_files = ["inference.py", "requirements.txt", "model.pth", "dockerfile"]
+            missing_files = []
+            
+            for rf in required_files:
+                file_path = os.path.join(upload_dir, rf)
+                if not os.path.exists(file_path):
+                    missing_files.append(rf)
+                    logger.error(f"Missing {rf} in uploaded zip. Checked: {file_path}")
+            
+            if missing_files:
+                # List all files in upload_dir for debugging
+                logger.error(f"Files in upload_dir: {os.listdir(upload_dir)}")
+                logger.error(f"Missing files: {missing_files}")
+                return False
+
+            logger.info(f"All required files found in {upload_dir}")
             return True
+            
+        except zipfile.BadZipFile as e:
+            logger.exception(f"Invalid zip file: {e}")
+            return False
         except Exception as e:
             logger.exception(f"Exception in FileHandler: {e}")
             return False
@@ -762,7 +811,8 @@ class CreateContainer(APIView):
 
     def buildContainer(self, name):
         image_name = f"user_{name}:latest"
-        upload_dir = f"/app/uploads/{name}/"
+        # FIXED: Use settings.MEDIA_ROOT instead of hardcoded /app
+        upload_dir = os.path.join(settings.MEDIA_ROOT, 'containers', 'uploads', name)
         try:
             subprocess.run(["docker", "build", "-t", image_name, upload_dir], check=True)
             return True
@@ -782,8 +832,14 @@ class RunContainer(APIView):
         image_name = request.data.get('image_name')
 
         job_id = str(uuid.uuid4())
-        input_dir = os.path.abspath(f"./inputs/{job_id}/")
-        output_dir = os.path.abspath(f"./outputs/{job_id}/")
+        
+        if hasattr(settings, 'ADDITIONAL_OUTPUTS_ROOT'):
+            base_output_dir = settings.ADDITIONAL_OUTPUTS_ROOT
+        else:
+            base_output_dir = os.path.join(settings.MEDIA_ROOT, 'outputs')
+        
+        input_dir = os.path.join(base_output_dir, 'inputs', str(job_id))
+        output_dir = os.path.join(base_output_dir, str(job_id))
 
         os.makedirs(input_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
@@ -810,11 +866,138 @@ class RunContainer(APIView):
             logger.debug(f"Container output: {result.stdout}")
 
         except subprocess.CalledProcessError as e:
-            logger.exception(f"Container failed: {e}\nstdout:{getattr(e, 'stdout', '')}\nstderr:{getattr(e, 'stderr', '')}")
-            return Response({'error': 'Container execution failed', 'stdout': getattr(e, 'stdout', ''), 'stderr': getattr(e, 'stderr', '')}, status=500)
+            logger.exception(f"Container failed: {e}")
+            return Response({
+                'error': 'Container execution failed',
+                'stdout': getattr(e, 'stdout', ''),
+                'stderr': getattr(e, 'stderr', '')
+            }, status=500)
 
         results_csv = os.path.join(output_dir, "results.csv")
+        video_file = os.path.join(output_dir, "output_live_feed.mp4")
+
+        response_data = {
+            'detail': 'Inference complete',
+            'job_id': job_id
+        }
+
         if os.path.exists(results_csv):
-            return Response({'detail': 'Inference complete', 'results_file': results_csv}, status=200)
+            response_data['results_file'] = f"/model/outputs/{job_id}/results.csv"
         else:
-            return Response({'error': 'No results generated'}, status=500)
+            response_data['results_file'] = None
+            logger.warning(f"Results CSV not found at: {results_csv}")
+
+        if os.path.exists(video_file):
+            # Convert video to web-compatible format immediately
+            web_video = os.path.join(output_dir, "web_output_live_feed.mp4")
+            try:
+                subprocess.run([
+                    'ffmpeg', '-i', video_file,
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                    '-c:a', 'aac', '-b:a', '128k',
+                    '-movflags', '+faststart',
+                    '-y', web_video
+                ], check=True, capture_output=True)
+                response_data['video_file'] = f"/model/outputs/{job_id}/web_output_live_feed.mp4"
+                logger.info(f"Web-compatible video created at: {web_video}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Video conversion failed: {e.stderr}")
+                response_data['video_file'] = f"/model/outputs/{job_id}/output_live_feed.mp4"
+        else:
+            response_data['video_file'] = None
+            logger.warning(f"Video file not found at: {video_file}")
+
+        return Response(response_data, status=200)
+    
+def stream_video(request, job_id, filename):
+    """
+    Stream video using FFmpeg with proper HTTP range support.
+    Converts video to web-compatible format on-the-fly if needed.
+    """
+    if hasattr(settings, 'ADDITIONAL_OUTPUTS_ROOT'):
+        base_output_dir = Path(settings.ADDITIONAL_OUTPUTS_ROOT)
+    else:
+        base_output_dir = Path(settings.MEDIA_ROOT) / 'outputs'
+    
+    video_path = base_output_dir / str(job_id) / filename
+    
+    logger.info(f"Attempting to stream video from: {video_path}")
+    
+    if not video_path.exists():
+        logger.error(f"Video not found at: {video_path}")
+        return HttpResponseNotFound("The requested video was not found.")
+
+    if not video_path.is_file():
+        logger.error(f"Path exists but is not a file: {video_path}")
+        return HttpResponseNotFound("The requested path is not a file.")
+
+    # Check if we need to convert the video to web-compatible format
+    converted_path = video_path.parent / f"web_{video_path.stem}.mp4"
+    
+    if not converted_path.exists():
+        logger.info(f"Converting video to web-compatible format: {converted_path}")
+        try:
+            # Convert to H.264 with AAC audio for maximum browser compatibility
+            subprocess.run([
+                'ffmpeg',
+                '-i', str(video_path),
+                '-c:v', 'libx264',           # H.264 video codec
+                '-preset', 'fast',            # Faster encoding
+                '-crf', '23',                 # Quality (lower = better, 18-28 recommended)
+                '-c:a', 'aac',                # AAC audio codec
+                '-b:a', '128k',               # Audio bitrate
+                '-movflags', '+faststart',    # Enable streaming (moov atom at beginning)
+                '-y',                         # Overwrite output file
+                str(converted_path)
+            ], check=True, capture_output=True, text=True)
+            logger.info(f"Video conversion successful: {converted_path}")
+            video_path = converted_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg conversion failed: {e.stderr}")
+            # Fall back to original file
+            pass
+    else:
+        logger.info(f"Using cached web-compatible video: {converted_path}")
+        video_path = converted_path
+
+    range_header = request.META.get('HTTP_RANGE', '').strip()
+    range_match = RANGE_RE.match(range_header)
+    
+    size = video_path.stat().st_size
+    content_type = 'video/mp4'
+    
+    logger.info(f"Video file size: {size} bytes, Range header: {range_header}")
+    
+    if range_match:
+        first_byte, last_byte = range_match.groups()
+        first_byte = int(first_byte) if first_byte else 0
+        last_byte = int(last_byte) if last_byte else size - 1
+        
+        if last_byte >= size:
+            last_byte = size - 1
+        
+        if first_byte >= size or first_byte < 0:
+            return HttpResponse(status=416)
+        
+        length = last_byte - first_byte + 1
+        
+        logger.debug(f"Serving bytes {first_byte}-{last_byte}/{size}")
+        
+        with video_path.open('rb') as file_handle:
+            file_handle.seek(first_byte)
+            data = file_handle.read(length)
+        
+        response = HttpResponse(data, status=206, content_type=content_type)
+        response['Content-Length'] = str(length)
+        response['Content-Range'] = f'bytes {first_byte}-{last_byte}/{size}'
+        response['Accept-Ranges'] = 'bytes'
+        response['Cache-Control'] = 'public, max-age=3600'
+        
+        return response
+    else:
+        logger.debug(f"Serving full file: {size} bytes")
+        response = FileResponse(video_path.open('rb'), content_type=content_type)
+        response['Content-Length'] = str(size)
+        response['Accept-Ranges'] = 'bytes'
+        response['Cache-Control'] = 'public, max-age=3600'
+        return response

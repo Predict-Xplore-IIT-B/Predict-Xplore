@@ -22,6 +22,7 @@ Xplore/model_images/*
 Xplore/reports/*
 Xplore/inputs/*
 Xplore/outputs/*
+Xplore/uploads/*
 
 # Credentials (never commit!)
 *credentials.
