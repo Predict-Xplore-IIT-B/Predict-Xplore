@@ -2,6 +2,10 @@
 
 Predict Xplore is a model-agnostic computer vision model deployment and testing platform designed to simplify the process of running inferences, applying explainable AI (XAI) techniques, and evaluating model performance. It provides a user-friendly interface and robust API for researchers and developers to deploy models, test datasets, and interpret results effectively.
 
+## Demo Video
+
+[![Demo](/thumbnail.png)](/predict%20Xplore%20nov25.mp4)
+
 ## Features
 
 - **Explainable AI (XAI) Techniques**: Integrate cutting-edge XAI methods such as Grad-CAM, Ablation-CAM, and others to interpret and visualize model decisions, enhancing transparency and trust in AI systems.
