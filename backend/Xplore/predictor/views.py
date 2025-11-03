@@ -29,6 +29,7 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from rest_framework.views import APIView
 from rest_framework import status, permissions
 from rest_framework.response import Response
+from .tasks import build_container_task
 
 from .serializers import ModelOptionsSerializer, ModelSerializer
 from .models import Model, Pipeline, Container, TestCase, Report
@@ -676,33 +677,35 @@ class CreateContainer(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        data = request.data
-        name = data.get('name')
-        description = data.get('description')
-        allowed_users = data.get('allowed_users', [])
-        upload_dir = f"/app/uploads/{name}/"
+        name = request.data.get('name')
+        description = request.data.get('description')
+        allowed_users = request.data.get('allowed_users', [])
+        zip_file = request.FILES.get("zipfile")
 
-        for container_name in Container.objects.values('name'):
-            if name == container_name['name']:
-                return JsonResponse({"error": f"Model with name '{name}' already exists"}, status=400)
+        if not all([name, description, zip_file]):
+            return Response({"error": "Fields 'name', 'description', and 'zipfile' are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.FileHandler(request, name):
-            return JsonResponse({"error": "Error in folder processing"}, status=400)
+        if Container.objects.filter(name=name).exists():
+            return Response({"error": f"A container with the name '{name}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.buildContainer(name):
-            self.clearDir(upload_dir)
-            return JsonResponse({"error": "Error in Building Container"}, status=400)
+        # Read file content and encode it to pass to the task
+        zip_file_content = zip_file.read()
+        zip_file_content_b64 = base64.b64encode(zip_file_content).decode('utf-8')
 
-        user = request.user if request.user.is_authenticated else User.objects.first()
-
-        container = Container.objects.create(
+        # Call the background task
+        build_container_task.delay(
             name=name,
             description=description,
             allowed_users=allowed_users,
-            created_by=user
+            created_by_id=request.user.id,
+            zip_file_content_b64=zip_file_content_b64
         )
-        return Response({"detail": "Container created successfully."}, status=status.HTTP_201_CREATED)
-
+        
+        return Response(
+            {"message": f"Container '{name}' build process has been started in the background."},
+            status=status.HTTP_202_ACCEPTED
+        )
+    
     def FileHandler(self, request, name):
         try:
             upload_dir = f"/app/uploads/{name}/"
