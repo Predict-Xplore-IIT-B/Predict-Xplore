@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 from .views import (
     ImageUploadView,
     PredictView,
@@ -15,7 +15,8 @@ from .views import (
     ModelOutputView,
     PredictPipeline,
     CreateContainer,
-    RunContainer
+    RunContainer,
+    stream_video
 )
 
 urlpatterns = [
@@ -37,4 +38,5 @@ urlpatterns = [
     path('create-container/', CreateContainer.as_view(), name='create-container'),
     path('run-container/', RunContainer.as_view(), name='run-container'),
     path('list-container/', container_list, name='list-container'),
+    path('outputs/<uuid:job_id>/<str:filename>', stream_video, name='stream_video'),
 ]
