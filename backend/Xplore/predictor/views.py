@@ -368,112 +368,156 @@ class PredictView(APIView):
         return Response({"message": "Inference and report generation complete.", "reports": report_urls}, status=status.HTTP_200_OK)
 
 
+# ... (baaki imports waise hi rahenge)
+
 class PredictPipeline(APIView):
     """
-    A simplified pipeline runner that reads base64 image stored in uploaded_image.session_test_image,
-    runs multiple models sequentially and stores encoded outputs in uploaded_image.encoded_image.
+    Runs a SEQUENTIAL pipeline of models based on user input.
+    Accepts 'test_case_id', 'models' (list), and 'pipeline_name'.
+    Generates ONE FINAL report named 'pipelinename_username.pdf'.
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        username = request.data.get('username')
-        if not username or not User.objects.filter(username=username).exists():
-            return Response({'error': 'User not found.'}, status=404)
+        test_case_id = request.data.get('test_case_id')
+        model_ids = request.data.get('models', [])
+        pipeline_name = request.data.get('pipeline_name') # <-- NAYA INPUT
 
-        b64 = uploaded_image.session_test_image
-        if not b64:
-            return HttpResponse("Please upload first.", status=400)
+        # --- Validation ---
+        if not test_case_id:
+            return Response({'error': 'A "test_case_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not model_ids:
+            return Response({'error': 'A "models" list (of model IDs) is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not pipeline_name: # NAYI VALIDATION
+            return Response({'error': 'A "pipeline_name" is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Original Image fetch karna
+        try:
+            test_case = TestCase.objects.get(pk=test_case_id, created_by=request.user)
+        except TestCase.DoesNotExist:
+            return Response({'error': 'Test case not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         try:
-            data = base64.b64decode(b64)
-            arr = np.frombuffer(data, dtype=np.uint8)
-            temp_image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-            if temp_image is None:
-                raise ValueError("Failed to decode test image.")
+            image_path = test_case.test_image.path
+            cv2_image = cv2.imread(image_path)
+            if cv2_image is None:
+                raise ValueError("Failed to read image from path.")
         except Exception as e:
-            logger.exception("Failed to decode base64 image for pipeline.")
-            return HttpResponse("Failed to decode.", status=400)
+            logger.exception(f"Error reading image for TestCase {test_case_id}: {e}")
+            return Response({'error': 'Failed to process the uploaded image.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Example pipeline model names; adjust as per your DB
-        selected = ['HumanDetection', 'Segmentation', 'HumanDetection']
+        # 2. Models fetch karna
         try:
-            weights = [Model.objects.get(name=m) for m in selected]
+            weights = [Model.objects.get(pk=model_id) for model_id in model_ids]
         except Model.DoesNotExist as e:
-            logger.exception("Model not found in pipeline.")
-            return HttpResponse("One or more selected models not found.", status=400)
+            return Response({'error': f'One or more models not found: {e}'}, status=status.HTTP_404_NOT_FOUND)
 
-        for name, weight in zip(selected, weights):
-            result, loaded_model = run_inference_call(weight, temp_image)
-            if result is None:
-                logger.warning(f"Skipping {name} due to empty result.")
+        
+        temp_image = cv2_image.copy() 
+        last_model_weight = None
+        last_model_output_image = None
+        last_model_name = "N/A"
+
+        # 3. Sequential Pipeline Loop
+        for weight in weights:
+            model_name = weight.name
+            logger.info(f"Running pipeline step: {model_name}")
+
+            result_tuple = run_inference_call(weight, temp_image)
+            
+            if not result_tuple or result_tuple[0] is None:
+                logger.warning(f"Skipping pipeline step '{model_name}': empty inference result.")
                 continue
 
-            # For segmentation we expect a mask -> convert to color
-            if weight.model_type == 'ImageSegmentation':
-                # result may be mask ndarray directly
-                mask = result[0] if isinstance(result, (list, tuple)) else result
-                out_img = self.mask_to_cv2(mask)
-            else:
-                # detection result assumed to have .plot() or be an ndarray
-                try:
-                    out_img = result.plot()
-                except Exception:
-                    out_img = result if isinstance(result, np.ndarray) else None
-
-            if out_img is None:
-                continue
-
-            if hasattr(out_img, 'ndim') and out_img.ndim == 4:
-                out_img = np.squeeze(out_img)
-
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fname = f"{name}_{ts}.png"
-            save_dir = os.path.abspath(os.path.join("pipeline_outputs"))
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, fname)
             try:
-                # ensure BGR image when writing with cv2
-                cv2.imwrite(save_path, out_img)
-            except Exception:
-                # fallback: convert with PIL
-                try:
-                    pil = Image.fromarray(out_img[:, :, ::-1])
-                    pil.save(save_path)
-                except Exception:
-                    logger.exception("Failed to save pipeline output image.")
+                model_output, _ = result_tuple
+                out_img_for_next_step = None
 
-            # store base64-encoded output for fetching
-            try:
-                pil = Image.fromarray(out_img[:, :, ::-1])
-                buf = BytesIO()
-                pil.save(buf, format="PNG")
-                buf.seek(0)
-                uploaded_image.encoded_image[f"{username}_{name}"] = base64.b64encode(buf.getvalue()).decode()
-            except Exception:
-                logger.exception("Failed to encode pipeline output.")
+                if weight.model_type == 'ImageSegmentation':
+                    mask = model_output[0] if isinstance(model_output, (list, tuple)) else model_output
+                    color_mask_bgr = self.mask_to_cv2(mask) 
+                    out_img_for_next_step = color_mask_bgr.copy()
 
-            # set temp_image to out_img for next step (if required)
-            temp_image = out_img
+                elif weight.model_type == 'HumanDetection':
+                    try:
+                        plot_img_bgr = model_output.plot()
+                        out_img_for_next_step = plot_img_bgr.copy()
+                    except Exception:
+                        out_img_for_next_step = model_output.copy() if isinstance(model_output, np.ndarray) else temp_image
 
-        # Optionally display last image to matplotlib (non-interactive)
+                if out_img_for_next_step is None:
+                    continue
+
+                temp_image = out_img_for_next_step
+                last_model_weight = weight
+                last_model_output_image = temp_image.copy()
+                last_model_name = model_name
+
+            except Exception as e:
+                logger.exception(f"Error processing pipeline step {model_name}: {e}")
+        
+        # 4. Loop ke baad, final report generate karna
+        if last_model_output_image is None or last_model_weight is None:
+            return Response({"error": "Pipeline failed to produce any output."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        logger.info(f"Generating final report for pipeline: {pipeline_name}")
         try:
-            plt.imshow(temp_image[:, :, ::-1])
-            plt.axis('off')
-            plt.close()
-        except Exception:
-            pass
+            # Report ka title bhi pipeline_name se set kar dete hain
+            pdf_buffer, _ = generate_report( # Hum generate_report ke filename ko ignore karenge
+                title=f"Pipeline Report: {pipeline_name}", 
+                model_output_img=last_model_output_image,
+                username=request.user.username, 
+                xai_img=None
+            )
 
-        return HttpResponse("Pipeline inference successful", status=200)
+            if pdf_buffer:
+                # --- YEH HAI NAYA FILENAME LOGIC ---
+                
+                # Filename ko safe banana (spaces, special characters hatana)
+                safe_pipeline_name = "".join(c for c in pipeline_name if c.isalnum() or c in ('_', '-')).rstrip()
+                username = request.user.username
+                
+                # Aapka desired format: pipelinename_username.pdf
+                new_report_filename = f"{safe_pipeline_name}_{username}.pdf"
+
+                report_instance = Report.objects.create(
+                    test_case=test_case, 
+                    model=last_model_weight # Report ko last model se link karna
+                )
+                
+                # Report save karte waqt NAYA filename use karna
+                report_instance.report_file.save(
+                    new_report_filename, 
+                    ContentFile(pdf_buffer.read()), 
+                    save=True
+                )
+                
+                # download_url = request.build_absolute_uri(f'/model/download/report/{report_instance.id}')
+                download_url = request.build_absolute_uri(f'/model/download/report/{report_instance.id}/')
+                test_case.status = 'Completed'
+                test_case.save()
+
+                return Response({
+                    "message": "Pipeline completed. Final report is generated.", 
+                    # Response mein bhi pipeline_name bhejna
+                    "reports": [{"model_name": pipeline_name, "download_url": download_url}]
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "Failed to generate PDF buffer for the final report."}, status=500)
+
+        except Exception as e:
+            logger.exception(f"Error generating final report: {e}")
+            return Response({"error": "Failed to save the final report."}, status=500)
+
 
     def mask_to_cv2(self, mask):
+        # Yeh helper function zaroori hai
         mask = np.asarray(mask, dtype=np.int32)
         num_classes = int(mask.max() + 1) if mask.size else 1
         cmap = plt.get_cmap('tab20', num_classes)
         colors = (cmap(np.arange(num_classes))[:, :3] * 255).astype(np.uint8)
         color_mask = colors[mask]
-        # return BGR for cv2 usage
-        return color_mask[..., ::-1]
-
+        return color_mask[..., ::-1] # BGR for cv2
 
 def home(request):
     return JsonResponse({"message": "Welcome to the Dashboard API"})

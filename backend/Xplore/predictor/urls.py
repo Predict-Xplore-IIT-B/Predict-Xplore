@@ -39,4 +39,5 @@ urlpatterns = [
     path('run-container/', RunContainer.as_view(), name='run-container'),
     path('list-container/', container_list, name='list-container'),
     path('outputs/<uuid:job_id>/<str:filename>', stream_video, name='stream_video'),
+    path('download/report/<str:report_id>', ReportDownloadView.as_view()),
 ]
